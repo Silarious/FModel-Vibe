@@ -86,6 +86,8 @@ public class ApplicationViewModel : ViewModel
     public CustomDirectoriesViewModel CustomDirectories { get; }
     public CUE4ParseViewModel CUE4Parse { get; }
     public SettingsViewModel SettingsView { get; }
+    public ProfilesViewModel ProfilesView { get; }
+    public ExportQueueViewModel ExportQueue { get; }
     public AesManagerViewModel AesManager { get; }
     public AudioPlayerViewModel AudioPlayer { get; }
 
@@ -129,6 +131,8 @@ public class ApplicationViewModel : ViewModel
         };
         CustomDirectories = new CustomDirectoriesViewModel();
         SettingsView = new SettingsViewModel();
+        ProfilesView = new ProfilesViewModel();
+        ExportQueue = new ExportQueueViewModel();
         AesManager = new AesManagerViewModel(CUE4Parse);
         AudioPlayer = new AudioPlayerViewModel();
 

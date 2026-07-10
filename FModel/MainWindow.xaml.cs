@@ -199,6 +199,15 @@ public partial class MainWindow
         searchView.FocusTab(ESearchViewTab.SearchView);
     }
 
+    private void OnSaveCurrentSettingsAsProfile(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ProfileNameDialog("Save Current Settings as New Profile");
+        if (!dialog.ShowDialog().GetValueOrDefault()) return;
+
+        ProfileManager.SaveCurrentAs(dialog.ProfileName);
+        ApplicationService.ApplicationView.ProfilesView.Refresh();
+    }
+
     private void OnRefViewClick(object sender, RoutedEventArgs e)
     {
         var searchView = Helper.GetWindow<SearchView>("Search For Packages", () => new SearchView().Show());

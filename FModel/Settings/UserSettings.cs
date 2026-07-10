@@ -24,10 +24,11 @@ namespace FModel.Settings
     public sealed class UserSettings : ViewModel
     {
         public static UserSettings Default { get; set; }
+        public static readonly string AppDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FModel_Vibe");
 #if DEBUG
-        public static readonly string FilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FModel", "AppSettings_Debug.json");
+        public static readonly string FilePath = Path.Combine(AppDataFolder, "AppSettings_Debug.json");
 #else
-        public static readonly string FilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FModel", "AppSettings.json");
+        public static readonly string FilePath = Path.Combine(AppDataFolder, "AppSettings.json");
 #endif
 
         static UserSettings()
@@ -203,6 +204,55 @@ namespace FModel.Settings
         {
             get => _keepDirectoryStructure;
             set => SetProperty(ref _keepDirectoryStructure, value);
+        }
+
+        private bool _skipAlreadyExportedFiles = true;
+        public bool SkipAlreadyExportedFiles
+        {
+            get => _skipAlreadyExportedFiles;
+            set => SetProperty(ref _skipAlreadyExportedFiles, value);
+        }
+
+        private bool _exportSmallestFilesFirst;
+        public bool ExportSmallestFilesFirst
+        {
+            get => _exportSmallestFilesFirst;
+            set => SetProperty(ref _exportSmallestFilesFirst, value);
+        }
+
+        private EMetadataExport _metadataExportMode = EMetadataExport.Disabled;
+        public EMetadataExport MetadataExportMode
+        {
+            get => _metadataExportMode;
+            set => SetProperty(ref _metadataExportMode, value);
+        }
+
+        private bool _autoExportTexturesWithModels;
+        public bool AutoExportTexturesWithModels
+        {
+            get => _autoExportTexturesWithModels;
+            set => SetProperty(ref _autoExportTexturesWithModels, value);
+        }
+
+        private bool _autoLoadAllFilesOnStartup;
+        public bool AutoLoadAllFilesOnStartup
+        {
+            get => _autoLoadAllFilesOnStartup;
+            set => SetProperty(ref _autoLoadAllFilesOnStartup, value);
+        }
+
+        private bool _convertUint64ToFloat;
+        public bool ConvertUint64ToFloat
+        {
+            get => _convertUint64ToFloat;
+            set => SetProperty(ref _convertUint64ToFloat, value);
+        }
+
+        private string _currentProfileName = "Default";
+        public string CurrentProfileName
+        {
+            get => _currentProfileName;
+            set => SetProperty(ref _currentProfileName, value);
         }
 
         private bool _showDecompileOption = false;

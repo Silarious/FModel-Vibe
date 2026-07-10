@@ -97,18 +97,37 @@ public enum EEndpointType
     Mapping
 }
 
+public enum EMetadataExport
+{
+    [Description("Disabled")]
+    Disabled,
+    [Description("Auto Export (Separate File)")]
+    AutoExport,
+    [Description("Append to Json")]
+    AppendToJson
+}
+
 [Flags]
 public enum EBulkType
 {
     None =          0,
     Auto =          1 << 0,
+    [Description("Properties (.json)")]
     Properties =    1 << 1,
+    [Description("Textures")]
     Textures =      1 << 2,
+    [Description("Models")]
     Meshes =        1 << 3,
+    [Description("Animations")]
     Animations =    1 << 4,
+    [Description("Audio")]
     Audio =         1 << 5,
+    [Description("Decompiled Code")]
     Code =          1 << 6,
+    [Description("Raw Data")]
     Raw =           1 << 7,
+    [Description("Metadata")]
+    Metadata =      1 << 8,
 }
 
 public enum EAssetCategory : uint

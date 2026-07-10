@@ -49,6 +49,9 @@ public class MenuCommand : ViewModelCommand<ApplicationViewModel>
             case "Settings":
                 Helper.OpenWindow<AdonisWindow>("Settings", () => new SettingsView().Show());
                 break;
+            case "ExportQueue":
+                Helper.OpenWindow<AdonisWindow>("Export Queue", () => new ExportQueue().Show());
+                break;
             case "Help_About":
                 Helper.OpenWindow<AdonisWindow>("About", () => new About().Show());
                 break;

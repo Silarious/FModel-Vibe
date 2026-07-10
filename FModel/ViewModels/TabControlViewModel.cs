@@ -387,6 +387,8 @@ public class TabItem : ViewModel
 
     private void SaveImage(TabImage image, string path, string fileName, bool updateUi)
     {
+        if (AlreadyExportedCheck(path, fileName, updateUi)) return;
+
         SaveImage(image, path);
         SaveCheck(path, fileName, updateUi);
     }
@@ -404,9 +406,18 @@ public class TabItem : ViewModel
         var directory = Path.Combine(UserSettings.Default.PropertiesDirectory,
             UserSettings.Default.KeepDirectoryStructure ? Entry.Directory : "", fileName).Replace('\\', '/');
 
+        if (AlreadyExportedCheck(directory, fileName, updateUi)) return;
+
         Directory.CreateDirectory(directory.SubstringBeforeLast('/'));
 
-        Application.Current.Dispatcher.Invoke(() => File.WriteAllText(directory, Document.Text));
+        var text = Document.Text;
+        if (UserSettings.Default.ConvertUint64ToFloat)
+        {
+            try { text = Uint64FloatConverter.Convert(text); }
+            catch (Exception e) { Log.Warning(e, "Failed to convert uint64 floats in {FileName}, saving as-is", fileName); }
+        }
+
+        Application.Current.Dispatcher.Invoke(() => File.WriteAllText(directory, text));
         SaveCheck(directory, fileName, updateUi);
     }
     public void SaveDecompiled(bool updateUi)
@@ -415,11 +426,36 @@ public class TabItem : ViewModel
         var directory = Path.Combine(UserSettings.Default.PropertiesDirectory,
             UserSettings.Default.KeepDirectoryStructure ? Entry.Directory : "", fileName).Replace('\\', '/');
 
+        if (AlreadyExportedCheck(directory, fileName, updateUi)) return;
+
         Directory.CreateDirectory(directory.SubstringBeforeLast('/'));
 
         Application.Current.Dispatcher.Invoke(() => File.WriteAllText(directory, Document.Text));
         SaveCheck(directory, fileName, updateUi);
     }
+
+    /// <summary>
+    /// mirrors CUE4ParseViewModel's already-exported check for the save paths that live on TabItem
+    /// (json properties, decompiled code, textures saved from the asset explorer/tab)
+    /// </summary>
+    private bool AlreadyExportedCheck(string path, string fileName, bool updateUi)
+    {
+        if (!UserSettings.Default.SkipAlreadyExportedFiles || !File.Exists(path))
+            return false;
+
+        Interlocked.Increment(ref ApplicationService.ApplicationView.CUE4Parse.SkippedExportCount);
+        Log.Information("Skipped '{FileName}': already exported", fileName);
+        if (updateUi)
+        {
+            FLogger.Append(ELog.Warning, () =>
+            {
+                FLogger.Text("Already exported ", Constants.WHITE);
+                FLogger.Link(fileName, path, true);
+            });
+        }
+        return true;
+    }
+
     private void SaveCheck(string path, string fileName, bool updateUi)
     {
         if (File.Exists(path))

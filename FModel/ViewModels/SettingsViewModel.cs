@@ -114,6 +114,13 @@ public class SettingsViewModel : ViewModel
         set => SetProperty(ref _selectedCosmeticStyle, value);
     }
 
+    private EMetadataExport _selectedMetadataExportMode;
+    public EMetadataExport SelectedMetadataExportMode
+    {
+        get => _selectedMetadataExportMode;
+        set => SetProperty(ref _selectedMetadataExportMode, value);
+    }
+
     private EMeshFormat _selectedMeshExportFormat;
     public EMeshFormat SelectedMeshExportFormat
     {
@@ -198,6 +205,7 @@ public class SettingsViewModel : ViewModel
     public ReadOnlyObservableCollection<EDiscordRpc> DiscordRpcs { get; private set; }
     public ReadOnlyObservableCollection<ECompressedAudio> CompressedAudios { get; private set; }
     public ReadOnlyObservableCollection<EIconStyle> CosmeticStyles { get; private set; }
+    public ReadOnlyObservableCollection<EMetadataExport> MetadataExportModes { get; private set; }
     public ReadOnlyObservableCollection<EMeshFormat> MeshExportFormats { get; private set; }
     public ReadOnlyObservableCollection<ESocketFormat> SocketExportFormats { get; private set; }
     public ReadOnlyObservableCollection<EFileCompressionFormat> CompressionFormats { get; private set; }
@@ -286,6 +294,7 @@ public class SettingsViewModel : ViewModel
         SelectedAssetLanguage = _assetLanguageSnapshot;
         SelectedCompressedAudio = _compressedAudioSnapshot;
         SelectedCosmeticStyle = _cosmeticStyleSnapshot;
+        SelectedMetadataExportMode = UserSettings.Default.MetadataExportMode;
         SelectedMeshExportFormat = _meshExportFormatSnapshot;
         SelectedSocketExportFormat = _socketExportFormatSnapshot;
         SelectedCompressionFormat = _selectedCompressionFormat;
@@ -305,6 +314,7 @@ public class SettingsViewModel : ViewModel
         DiscordRpcs = new ReadOnlyObservableCollection<EDiscordRpc>(new ObservableCollection<EDiscordRpc>(EnumerateDiscordRpcs()));
         CompressedAudios = new ReadOnlyObservableCollection<ECompressedAudio>(new ObservableCollection<ECompressedAudio>(EnumerateCompressedAudios()));
         CosmeticStyles = new ReadOnlyObservableCollection<EIconStyle>(new ObservableCollection<EIconStyle>(EnumerateCosmeticStyles()));
+        MetadataExportModes = new ReadOnlyObservableCollection<EMetadataExport>(new ObservableCollection<EMetadataExport>(EnumerateMetadataExportModes()));
         MeshExportFormats = new ReadOnlyObservableCollection<EMeshFormat>(new ObservableCollection<EMeshFormat>(EnumerateMeshExportFormat()));
         SocketExportFormats = new ReadOnlyObservableCollection<ESocketFormat>(new ObservableCollection<ESocketFormat>(EnumerateSocketExportFormat()));
         CompressionFormats = new ReadOnlyObservableCollection<EFileCompressionFormat>(new ObservableCollection<EFileCompressionFormat>(EnumerateCompressionFormat()));
@@ -343,6 +353,7 @@ public class SettingsViewModel : ViewModel
         UserSettings.Default.AssetLanguage = SelectedAssetLanguage;
         UserSettings.Default.CompressedAudioMode = SelectedCompressedAudio;
         UserSettings.Default.CosmeticStyle = SelectedCosmeticStyle;
+        UserSettings.Default.MetadataExportMode = SelectedMetadataExportMode;
         UserSettings.Default.MeshExportFormat = SelectedMeshExportFormat;
         UserSettings.Default.SocketExportFormat = SelectedSocketExportFormat;
         UserSettings.Default.CompressionFormat = SelectedCompressionFormat;
@@ -370,6 +381,7 @@ public class SettingsViewModel : ViewModel
     private IEnumerable<EDiscordRpc> EnumerateDiscordRpcs() => Enum.GetValues<EDiscordRpc>();
     private IEnumerable<ECompressedAudio> EnumerateCompressedAudios() => Enum.GetValues<ECompressedAudio>();
     private IEnumerable<EIconStyle> EnumerateCosmeticStyles() => Enum.GetValues<EIconStyle>();
+    private IEnumerable<EMetadataExport> EnumerateMetadataExportModes() => Enum.GetValues<EMetadataExport>();
     private IEnumerable<EMeshFormat> EnumerateMeshExportFormat() => Enum.GetValues<EMeshFormat>();
     private IEnumerable<ESocketFormat> EnumerateSocketExportFormat() => Enum.GetValues<ESocketFormat>();
     private IEnumerable<EFileCompressionFormat> EnumerateCompressionFormat() => Enum.GetValues<EFileCompressionFormat>();

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows;
 
@@ -131,5 +132,25 @@ public static class Helper
         }
 
         return dir.Name;
+    }
+
+    /// <summary>
+    /// Looks up an embedded resource by suffix (e.g. "Resources.Json.xshd") instead of assuming the
+    /// manifest resource name's prefix matches the current assembly/root namespace. That prefix is
+    /// derived from RootNamespace at compile time, while callers historically built the lookup key
+    /// from the assembly's runtime name (Assembly.GetName().Name) - those two aren't guaranteed to
+    /// be the same string (e.g. after changing <AssemblyName> without changing <RootNamespace>, or
+    /// vice versa), which throws this whole thing out of sync and made the resource stream come back
+    /// null. Matching by suffix works regardless of what either is currently set to.
+    /// </summary>
+    public static Stream GetEmbeddedResourceStream(Assembly assembly, string resourceSuffix)
+    {
+        var resourceName = Array.Find(assembly.GetManifestResourceNames(),
+            n => n.EndsWith(resourceSuffix, StringComparison.OrdinalIgnoreCase));
+
+        if (resourceName is null)
+            throw new FileNotFoundException($"Could not find embedded resource ending with '{resourceSuffix}' in assembly '{assembly.GetName().Name}'");
+
+        return assembly.GetManifestResourceStream(resourceName);
     }
 }

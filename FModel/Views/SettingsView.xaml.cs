@@ -115,6 +115,48 @@ public partial class SettingsView
         if (TryBrowse(out var path)) UserSettings.Default.ModelDirectory = path;
     }
 
+    private void OnProfileSave(object sender, RoutedEventArgs e)
+    {
+        var current = _applicationView.ProfilesView.SelectedProfile;
+        if (string.IsNullOrEmpty(current))
+        {
+            OnProfileSaveAs(sender, e);
+            return;
+        }
+
+        _applicationView.ProfilesView.SaveAs(current);
+    }
+
+    private void OnProfileSaveAs(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ProfileNameDialog("Save Profile As");
+        if (dialog.ShowDialog().GetValueOrDefault())
+            _applicationView.ProfilesView.SaveAs(dialog.ProfileName);
+    }
+
+    private void OnProfileRename(object sender, RoutedEventArgs e)
+    {
+        var current = _applicationView.ProfilesView.SelectedProfile;
+        if (string.IsNullOrEmpty(current)) return;
+
+        var dialog = new ProfileNameDialog("Rename Profile", current);
+        if (dialog.ShowDialog().GetValueOrDefault())
+            _applicationView.ProfilesView.Rename(current, dialog.ProfileName);
+    }
+
+    private void OnProfileDelete(object sender, RoutedEventArgs e)
+    {
+        var current = _applicationView.ProfilesView.SelectedProfile;
+        if (string.IsNullOrEmpty(current)) return;
+
+        _applicationView.ProfilesView.Delete(current);
+    }
+
+    private void OnBrowseCode(object sender, RoutedEventArgs e)
+    {
+        if (TryBrowse(out var path)) UserSettings.Default.CodeDirectory = path;
+    }
+
     private void OnBrowseMappings(object sender, RoutedEventArgs e)
     {
         var openFileDialog = new OpenFileDialog

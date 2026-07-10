@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using CUE4Parse.FileProvider.Objects;
 using CUE4Parse.Utils;
+using FModel.Extensions;
 using FModel.Framework;
 using FModel.Services;
 using FModel.Settings;
@@ -30,6 +31,7 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
         None,
         JSON,
         Metadata,
+        ExportMetadata,
         References,
         Decompile,
     }
@@ -60,11 +62,13 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
         {
             "Assets_Extract_New_Tab" => (EAction.Show, EShowAssetType.JSON, EBulkType.None),
             "Assets_Show_Metadata" => (EAction.Show, EShowAssetType.Metadata, EBulkType.None),
+            "Assets_Export_Metadata" => (EAction.Show, EShowAssetType.ExportMetadata, EBulkType.None),
             "Assets_Show_References" => (EAction.Show, EShowAssetType.References, EBulkType.None),
             "Assets_Decompile" => (EAction.Show, EShowAssetType.Decompile, EBulkType.Code),
 
             "Save_Data" => (EAction.Export, EShowAssetType.None, EBulkType.Raw),
             "Save_Properties" => (EAction.Export, EShowAssetType.None, EBulkType.Properties),
+            "Save_Metadata" => (EAction.Export, EShowAssetType.None, EBulkType.Metadata),
             "Save_Textures" => (EAction.Export, EShowAssetType.None, EBulkType.Textures),
             "Save_Models" => (EAction.Export, EShowAssetType.None, EBulkType.Meshes),
             "Save_Animations" => (EAction.Export, EShowAssetType.None, EBulkType.Animations),
@@ -73,6 +77,19 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
 
             _ => throw new ArgumentOutOfRangeException("Unsupported asset action."),
         };
+
+        // when queuing mode is on, folder export actions get queued instead of running right away so
+        // the user can line up several exports (different folders, different bulk types, or both) and
+        // run them back-to-back later from the Export Queue window
+        if (action is EAction.Export && folders.Length > 0 && contextViewModel.ExportQueue.IsQueuingMode)
+        {
+            foreach (var folder in folders)
+                contextViewModel.ExportQueue.Enqueue(folder, bulktype, $"{folder.PathAtThisPoint} — {bulktype.GetDescription()}");
+
+            FLogger.Append(ELog.Information, () => FLogger.Text(
+                $"Queued {folders.Length} export{(folders.Length > 1 ? "s" : "")}. Open the Export Queue from the top menu to review and run.", Constants.WHITE, true));
+            return;
+        }
 
         Interlocked.Exchange(ref contextViewModel.CUE4Parse.ExportedCount, 0);
         Interlocked.Exchange(ref contextViewModel.CUE4Parse.FailedExportCount, 0);
@@ -87,6 +104,7 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
                 {
                     EShowAssetType.JSON => entry => contextViewModel.CUE4Parse.Extract(cancellationToken, entry, true),
                     EShowAssetType.Metadata => entry => contextViewModel.CUE4Parse.ShowMetadata(entry),
+                    EShowAssetType.ExportMetadata => entry => contextViewModel.CUE4Parse.ExportMetadata(entry, true),
                     EShowAssetType.Decompile => entry => contextViewModel.CUE4Parse.Decompile(entry),
                     EShowAssetType.References => entry => contextViewModel.CUE4Parse.FindReferences(entry),
                     _ => throw new ArgumentOutOfRangeException("Unsupported asset action type."),
@@ -106,6 +124,7 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
             {
                 EBulkType.Raw => (UserSettings.Default.RawDataDirectory, "files"),
                 EBulkType.Properties => (UserSettings.Default.PropertiesDirectory, "json files"),
+                EBulkType.Metadata => (UserSettings.Default.PropertiesDirectory, "metadata files"),
                 EBulkType.Textures => (UserSettings.Default.TextureDirectory, "textures"),
                 EBulkType.Meshes => (UserSettings.Default.ModelDirectory, "models"),
                 EBulkType.Animations => (UserSettings.Default.ModelDirectory, "animations"),
@@ -120,6 +139,7 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
             Action<TreeItem> folderAction = bulktype switch
             {
                 EBulkType.Raw => folder => contextViewModel.CUE4Parse.ExportFolder(cancellationToken, folder),
+                EBulkType.Metadata => folder => contextViewModel.CUE4Parse.ExportMetadataFolder(cancellationToken, folder),
                 _ => folder => contextViewModel.CUE4Parse.ExtractFolder(cancellationToken, folder, bulktype | EBulkType.Auto),
             };
 
@@ -135,6 +155,7 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
             Action<GameFile, EBulkType, bool> fileAction = bulktype switch
             {
                 EBulkType.Raw => (entry, _, update) => contextViewModel.CUE4Parse.ExportData(entry, !update),
+                EBulkType.Metadata => (entry, _, update) => contextViewModel.CUE4Parse.ExportMetadata(entry, !update),
                 _ => (entry, bulk, update) => contextViewModel.CUE4Parse.Extract(cancellationToken, entry, false, bulk),
             };
 

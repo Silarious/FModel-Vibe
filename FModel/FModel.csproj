@@ -5,6 +5,8 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>FModel.ico</ApplicationIcon>
+    <AssemblyName>FModel_Vibe</AssemblyName>
+    <RootNamespace>FModel</RootNamespace>
     <Version>4.4.4.0</Version>
     <AssemblyVersion>4.4.4.0</AssemblyVersion>
     <FileVersion>4.4.4.0</FileVersion>
@@ -15,6 +17,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <StartupObject>FModel.App</StartupObject>
+    <BaseOutputPath></BaseOutputPath>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">

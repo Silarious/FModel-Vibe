@@ -1,3 +1,5 @@
+using FModel.Services;
+using FModel.Settings;
 using FModel.ViewModels;
 using Ookii.Dialogs.Wpf;
 using System.Windows;
@@ -19,6 +21,15 @@ public partial class DirectorySelector
     {
         DialogResult = true;
         Close();
+    }
+
+    private void OnSaveCurrentSettingsAsProfile(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ProfileNameDialog("Save Current Settings as New Profile");
+        if (!dialog.ShowDialog().GetValueOrDefault()) return;
+
+        ProfileManager.SaveCurrentAs(dialog.ProfileName);
+        ApplicationService.ApplicationView.ProfilesView.Refresh();
     }
 
     private void OnBrowseDirectories(object sender, RoutedEventArgs e)

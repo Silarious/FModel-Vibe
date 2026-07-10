@@ -154,6 +154,61 @@
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="Settings" Command="{Binding MenuCommand}" CommandParameter="Settings" />
+                <MenuItem Command="{Binding MenuCommand}" CommandParameter="ExportQueue">
+                    <MenuItem.Header>
+                        <TextBlock>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="Export Queue" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ExportQueue.HasItems}" Value="True">
+                                            <Setter Property="Text" Value="{Binding ExportQueue.Items.Count, StringFormat='Export Queue ({0})'}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </MenuItem.Header>
+                    <MenuItem.Icon>
+                        <Viewbox Width="16" Height="16">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.AccentForegroundBrush}}" Data="{StaticResource SaveIcon}" />
+                            </Canvas>
+                        </Viewbox>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Profiles">
+                    <MenuItem.Icon>
+                        <Viewbox Width="16" Height="16">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.AccentForegroundBrush}}" Data="{StaticResource SaveIcon}" />
+                            </Canvas>
+                        </Viewbox>
+                    </MenuItem.Icon>
+                    <ComboBox MinWidth="200" Margin="4"
+                              ItemsSource="{Binding ProfilesView.ProfileNames}"
+                              SelectedItem="{Binding ProfilesView.SelectedProfile, Mode=TwoWay}"
+                              adonisExtensions:WatermarkExtension.Watermark="No profiles saved yet" />
+                    <Separator />
+                    <MenuItem Header="Save Current Settings as New Profile..." Click="OnSaveCurrentSettingsAsProfile">
+                        <MenuItem.Icon>
+                            <Viewbox Width="16" Height="16">
+                                <Canvas Width="24" Height="24">
+                                    <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.AccentForegroundBrush}}" Data="{StaticResource AddIcon}" />
+                                </Canvas>
+                            </Viewbox>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Manage Profiles..." Command="{Binding MenuCommand}" CommandParameter="Settings">
+                        <MenuItem.Icon>
+                            <Viewbox Width="16" Height="16">
+                                <Canvas Width="24" Height="24">
+                                    <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.AccentForegroundBrush}}" Data="{StaticResource ConfigIcon}" />
+                                </Canvas>
+                            </Viewbox>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                </MenuItem>
                 <MenuItem Header="Help" >
                     <MenuItem Header="Donate" Command="{Binding MenuCommand}" CommandParameter="Help_Donate">
                         <MenuItem.Icon>
@@ -309,7 +364,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <StackPanel Grid.Column="0" Orientation="Horizontal">
-                                    <Image Source="/FModel;component/Resources/label.png"
+                                    <Image Source="/FModel_Vibe;component/Resources/label.png"
                                            Width="16" Height="16" HorizontalAlignment="Center" Margin="0 0 3.5 0" />
                                     <TextBlock HorizontalAlignment="Left" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
                                         <TextBlock.Text>

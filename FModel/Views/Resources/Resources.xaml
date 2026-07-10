@@ -139,7 +139,7 @@
                             <ColumnDefinition Width="85" />
                         </Grid.ColumnDefinitions>
                         <Image x:Name="ListImage"
-                               Source="/FModel;component/Resources/archive.png"
+                               Source="/FModel_Vibe;component/Resources/archive.png"
                                Width="16"
                                Height="16"
                                HorizontalAlignment="Center"
@@ -170,13 +170,13 @@
                                      Value="True">
                             <Setter TargetName="ListImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/archive_enabled.png" />
+                                    Value="/FModel_Vibe;component/Resources/archive_enabled.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding IsEnabled}"
                                      Value="False">
                             <Setter TargetName="ListImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/archive_disabled.png" />
+                                    Value="/FModel_Vibe;component/Resources/archive_disabled.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding IsLooseFilesContainer}"
                                      Value="True">
@@ -185,7 +185,7 @@
                                     Value="Collapsed" />
                             <Setter TargetName="ListImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/asset.png" />
+                                    Value="/FModel_Vibe;component/Resources/asset.png" />
                         </DataTrigger>
                     </DataTemplate.Triggers>
                 </DataTemplate>
@@ -296,7 +296,7 @@
                 <HierarchicalDataTemplate ItemsSource="{Binding FoldersView, IsAsync=True}">
                     <StackPanel Orientation="Horizontal">
                         <Image x:Name="TreeImage"
-                               Source="/FModel;component/Resources/folder.png"
+                               Source="/FModel_Vibe;component/Resources/folder.png"
                                Width="16"
                                Height="16"
                                HorizontalAlignment="Center"
@@ -338,7 +338,7 @@
                                      Value="0">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/empty_folder.png" />
+                                    Value="/FModel_Vibe;component/Resources/empty_folder.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding AssetsList.Assets.Count}"
                                      Value="0">
@@ -350,217 +350,217 @@
                                      Value="Config">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/gear.png" />
+                                    Value="/FModel_Vibe;component/Resources/gear.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Plugins">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/puzzle.png" />
+                                    Value="/FModel_Vibe;component/Resources/puzzle.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Windows">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/windows.png" />
+                                    Value="/FModel_Vibe;component/Resources/windows.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Android">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/android.png" />
+                                    Value="/FModel_Vibe;component/Resources/android.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="IOS">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/apple.png" />
+                                    Value="/FModel_Vibe;component/Resources/apple.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Mac">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/apple.png" />
+                                    Value="/FModel_Vibe;component/Resources/apple.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Linux">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/linux.png" />
+                                    Value="/FModel_Vibe;component/Resources/linux.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="LinuxAArch64">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/linux.png" />
+                                    Value="/FModel_Vibe;component/Resources/linux.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Unix">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/unix.png" />
+                                    Value="/FModel_Vibe;component/Resources/unix.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Weapons">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/weapon.png" />
+                                    Value="/FModel_Vibe;component/Resources/weapon.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Localization">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/localization.png" />
+                                    Value="/FModel_Vibe;component/Resources/localization.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Internationalization">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/localization.png" />
+                                    Value="/FModel_Vibe;component/Resources/localization.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="UI">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/ui.png" />
+                                    Value="/FModel_Vibe;component/Resources/ui.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Sounds">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/sound.png" />
+                                    Value="/FModel_Vibe;component/Resources/sound.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="2dAssets">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/texture.png" />
+                                    Value="/FModel_Vibe;component/Resources/texture.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Textures">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/texture.png" />
+                                    Value="/FModel_Vibe;component/Resources/texture.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Engine">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/engine.png" />
+                                    Value="/FModel_Vibe;component/Resources/engine.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="EngineContent">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/engine.png" />
+                                    Value="/FModel_Vibe;component/Resources/engine.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Platforms">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/pc.png" />
+                                    Value="/FModel_Vibe;component/Resources/pc.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Fortnite">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/fortnite.png" />
+                                    Value="/FModel_Vibe;component/Resources/fortnite.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="FortniteGame">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/fortnitebr.png" />
+                                    Value="/FModel_Vibe;component/Resources/fortnitebr.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="WorldExplorers">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/battlebreakers.png" />
+                                    Value="/FModel_Vibe;component/Resources/battlebreakers.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="OakGame">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/borderlands.png" />
+                                    Value="/FModel_Vibe;component/Resources/borderlands.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="ShooterGame">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/valorant.png" />
+                                    Value="/FModel_Vibe;component/Resources/valorant.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="RogueCompany">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/roguecompany.png" />
+                                    Value="/FModel_Vibe;component/Resources/roguecompany.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="g3">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/spellbreak.png" />
+                                    Value="/FModel_Vibe;component/Resources/spellbreak.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="SwGame">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/fallenorder.png" />
+                                    Value="/FModel_Vibe;component/Resources/fallenorder.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Prospect">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/thecycle.png" />
+                                    Value="/FModel_Vibe;component/Resources/thecycle.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Materials">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/materialicon.png" />
+                                    Value="/FModel_Vibe;component/Resources/materialicon.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header, Converter={x:Static converters:CaseInsensitiveStringEqualsConverter.Instance}, ConverterParameter='Blueprints'}"
                                      Value="True">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/blueprint.png" />
+                                    Value="/FModel_Vibe;component/Resources/blueprint.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Cinematics">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/cinematics.png" />
+                                    Value="/FModel_Vibe;component/Resources/cinematics.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Movies">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/cinematics.png" />
+                                    Value="/FModel_Vibe;component/Resources/cinematics.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Audio">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/sound.png" />
+                                    Value="/FModel_Vibe;component/Resources/sound.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Creative">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/creative.png" />
+                                    Value="/FModel_Vibe;component/Resources/creative.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header}"
                                      Value="Athena">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/athena.png" />
+                                    Value="/FModel_Vibe;component/Resources/athena.png" />
                         </DataTrigger>
                         <DataTrigger Binding="{Binding Header, Converter={x:Static converters:CaseInsensitiveStringEqualsConverter.Instance}, ConverterParameter='StateOfDecay2'}"
                                      Value="True">
                             <Setter TargetName="TreeImage"
                                     Property="Source"
-                                    Value="/FModel;component/Resources/stateofdecay2.png" />
+                                    Value="/FModel_Vibe;component/Resources/stateofdecay2.png" />
                         </DataTrigger>
                     </HierarchicalDataTemplate.Triggers>
                 </HierarchicalDataTemplate>

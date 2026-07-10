@@ -79,6 +79,7 @@ using FModel.Views.Resources.Controls;
 using FModel.Views.Snooper;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Linq;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using Serilog;
@@ -163,6 +164,7 @@ public class CUE4ParseViewModel : ViewModel
 
     public int ExportedCount;
     public int FailedExportCount;
+    public int SkippedExportCount;
 
     public CUE4ParseViewModel()
     {
@@ -361,6 +363,38 @@ public class CUE4ParseViewModel : ViewModel
         var aesMax = Provider.RequiredKeys.Count + Provider.Keys.Count;
         var archiveMax = Provider.UnloadedVfs.Count + Provider.MountedVfs.Count;
         Log.Information($"Project: {Provider.ProjectName} | Mounted: {Provider.MountedVfs.Count}/{archiveMax} | AES: {Provider.Keys.Count}/{aesMax} | Files: x{Provider.Files.Count}");
+
+        if (UserSettings.Default.AutoLoadAllFilesOnStartup)
+            AutoLoadAllFiles();
+    }
+
+    /// <summary>
+    /// populates the assets explorer with every recognized file, equivalent to pressing "Load" with the
+    /// "All" loading mode selected; used right after pak/archive files have been recognized when the
+    /// "Auto Load All Files on Startup" setting is enabled
+    /// </summary>
+    private void AutoLoadAllFiles()
+    {
+        if (Provider.Files.Count == 0) return;
+        if (Provider.Keys.Count == 0 && Provider.RequiredKeys.Count > 0) return; // still encrypted, can't list yet
+
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            AssetsFolder.Folders.Clear();
+            SearchVm.SearchResults.Clear();
+            ApplicationService.ApplicationView.SelectedLeftTabIndex = 1; // folders tab
+            ApplicationService.ApplicationView.IsAssetsExplorerVisible = true;
+        });
+
+        var entries = new List<GameFile>();
+        foreach (var asset in Provider.Files.Values)
+        {
+            if (asset.IsUePackagePayload) continue;
+            entries.Add(asset);
+        }
+
+        ApplicationService.ApplicationView.Status.UpdateStatusLabel($"{entries.Count:### ### ###} Packages");
+        AssetsFolder.BulkPopulate(entries);
     }
 
     public void ClearProvider()
@@ -598,9 +632,19 @@ public class CUE4ParseViewModel : ViewModel
         }
     }
 
+    /// <summary>
+    /// order the given assets list according to the "export smallest files first" user setting
+    /// (no-op, in original order, when the toggle is disabled)
+    /// </summary>
+    private static IEnumerable<GameFileViewModel> OrderForExport(IEnumerable<GameFileViewModel> assets)
+        => UserSettings.Default.ExportSmallestFilesFirst ? assets.OrderBy(a => a.Asset.Size) : assets;
+
+    private static IEnumerable<GameFile> OrderForExport(IEnumerable<GameFile> assets)
+        => UserSettings.Default.ExportSmallestFilesFirst ? assets.OrderBy(a => a.Size) : assets;
+
     private void BulkFolder(CancellationToken cancellationToken, TreeItem folder, Action<GameFile> action)
     {
-        foreach (var entry in folder.AssetsList.Assets)
+        foreach (var entry in OrderForExport(folder.AssetsList.Assets))
         {
             Thread.Yield();
             cancellationToken.ThrowIfCancellationRequested();
@@ -619,13 +663,77 @@ public class CUE4ParseViewModel : ViewModel
 
     public void ExportFolder(CancellationToken cancellationToken, TreeItem folder)
     {
-        Parallel.ForEach(folder.AssetsList.Assets, entry =>
+        Parallel.ForEach(OrderForExport(folder.AssetsList.Assets), entry =>
         {
             cancellationToken.ThrowIfCancellationRequested();
             ExportData(entry.Asset, false);
         });
 
         foreach (var f in folder.Folders) ExportFolder(cancellationToken, f);
+    }
+
+    public void ExportMetadataFolder(CancellationToken cancellationToken, TreeItem folder)
+    {
+        Parallel.ForEach(OrderForExport(folder.AssetsList.Assets), entry =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!entry.Asset.IsUePackage) return; // no metadata to export for raw files
+
+            ExportMetadata(entry.Asset, false);
+        });
+
+        foreach (var f in folder.Folders) ExportMetadataFolder(cancellationToken, f);
+    }
+
+    /// <summary>
+    /// Runs a single bulk folder export (used by the Export Queue). Mirrors the dirType/folderAction/log
+    /// logic in RightClickMenuCommand but is self-contained so queued steps can run back-to-back without
+    /// going through the context menu's parameter parsing.
+    /// </summary>
+    public void RunFolderExport(CancellationToken cancellationToken, TreeItem folder, EBulkType bulktype)
+    {
+        var (dirType, filetype) = bulktype switch
+        {
+            EBulkType.Raw => (UserSettings.Default.RawDataDirectory, "files"),
+            EBulkType.Properties => (UserSettings.Default.PropertiesDirectory, "json files"),
+            EBulkType.Metadata => (UserSettings.Default.PropertiesDirectory, "metadata files"),
+            EBulkType.Textures => (UserSettings.Default.TextureDirectory, "textures"),
+            EBulkType.Meshes => (UserSettings.Default.ModelDirectory, "models"),
+            EBulkType.Animations => (UserSettings.Default.ModelDirectory, "animations"),
+            EBulkType.Audio => (UserSettings.Default.AudioDirectory, "audio files"),
+            EBulkType.Code => (UserSettings.Default.CodeDirectory, "code files"),
+            _ => (null, null),
+        };
+        if (string.IsNullOrEmpty(dirType)) return;
+
+        Interlocked.Exchange(ref ExportedCount, 0);
+        Interlocked.Exchange(ref FailedExportCount, 0);
+        Interlocked.Exchange(ref SkippedExportCount, 0);
+
+        switch (bulktype)
+        {
+            case EBulkType.Raw: ExportFolder(cancellationToken, folder); break;
+            case EBulkType.Metadata: ExportMetadataFolder(cancellationToken, folder); break;
+            default: ExtractFolder(cancellationToken, folder, bulktype | EBulkType.Auto); break;
+        }
+
+        var path = Path.Combine(dirType, UserSettings.Default.KeepDirectoryStructure ? folder.PathAtThisPoint : folder.PathAtThisPoint.SubstringAfterLast('/')).Replace('\\', '/');
+        if (ExportedCount > 0)
+        {
+            FLogger.Append(ELog.Information, () =>
+            {
+                FLogger.Text($"[Queue] Successfully exported {ExportedCount} {filetype} from ", Constants.WHITE);
+                FLogger.Link(folder.PathAtThisPoint, Path.Exists(path) ? path : dirType, true);
+            });
+        }
+        else if (FailedExportCount == 0)
+        {
+            FLogger.Append(ELog.Warning, () => FLogger.Text($"[Queue] Failed to find any {filetype} in {folder.PathAtThisPoint}", Constants.WHITE, true));
+        }
+        else
+        {
+            FLogger.Append(ELog.Error, () => FLogger.Text($"[Queue] Failed to export {FailedExportCount} {filetype} from {folder.PathAtThisPoint}", Constants.WHITE, true));
+        }
     }
 
     public void ExtractFolder(CancellationToken cancellationToken, TreeItem folder, EBulkType bulk)
@@ -641,7 +749,8 @@ public class CUE4ParseViewModel : ViewModel
         => BulkFolder(cancellationToken, folder, asset => Extract(cancellationToken, asset, TabControl.HasNoTabs, EBulkType.Textures | EBulkType.Auto));
 
     public void ModelFolder(CancellationToken cancellationToken, TreeItem folder)
-        => BulkFolder(cancellationToken, folder, asset => Extract(cancellationToken, asset, TabControl.HasNoTabs, EBulkType.Meshes | EBulkType.Auto));
+        => BulkFolder(cancellationToken, folder, asset => Extract(cancellationToken, asset, TabControl.HasNoTabs,
+            EBulkType.Meshes | EBulkType.Auto | (UserSettings.Default.AutoExportTexturesWithModels ? EBulkType.Textures : EBulkType.None)));
 
     public void AnimationFolder(CancellationToken cancellationToken, TreeItem folder)
         => BulkFolder(cancellationToken, folder, asset => Extract(cancellationToken, asset, TabControl.HasNoTabs, EBulkType.Animations | EBulkType.Auto));
@@ -666,6 +775,7 @@ public class CUE4ParseViewModel : ViewModel
         var saveTextures = HasFlag(bulk, EBulkType.Textures);
         var saveAudio = HasFlag(bulk, EBulkType.Audio);
         var saveDecompiled = HasFlag(bulk, EBulkType.Code);
+
         switch (entry.Extension)
         {
             case "uasset":
@@ -676,8 +786,26 @@ public class CUE4ParseViewModel : ViewModel
 
                 if (saveProperties || updateUi)
                 {
-                    TabControl.SelectedTab.SetDocumentText(JsonConvert.SerializeObject(result.GetDisplayData(saveProperties), Formatting.Indented), saveProperties, updateUi);
-                    if (saveProperties) break; // do not search for viewable exports if we are dealing with jsons
+                    var metadataMode = UserSettings.Default.MetadataExportMode;
+                    string json;
+                    if (saveProperties && metadataMode == EMetadataExport.AppendToJson)
+                    {
+                        var exportsToken = JToken.Parse(JsonConvert.SerializeObject(result.GetDisplayData(true), Formatting.Indented));
+                        var metadataToken = JToken.Parse(JsonConvert.SerializeObject(result.Package, Formatting.Indented));
+                        json = new JObject { ["Exports"] = exportsToken, ["Metadata"] = metadataToken }.ToString(Formatting.Indented);
+                    }
+                    else
+                    {
+                        json = JsonConvert.SerializeObject(result.GetDisplayData(saveProperties), Formatting.Indented);
+                    }
+
+                    TabControl.SelectedTab.SetDocumentText(json, saveProperties, updateUi);
+                    if (saveProperties)
+                    {
+                        if (metadataMode == EMetadataExport.AutoExport)
+                            ExportMetadata(entry, updateUi);
+                        break; // do not search for viewable exports if we are dealing with jsons
+                    }
                 }
 
                 if (saveDecompiled)
@@ -1574,6 +1702,74 @@ public class CUE4ParseViewModel : ViewModel
         TabControl.SelectedTab.SetDocumentText(JsonConvert.SerializeObject(package, Formatting.Indented), false, false);
     }
 
+    /// <summary>
+    /// exports the package's metadata (same content shown by ShowMetadata) to disk as its own json file,
+    /// either from the "Export Metadata" button/context menu or automatically when MetadataExportMode is AutoExport
+    /// </summary>
+    public void ExportMetadata(GameFile entry, bool updateUi = true)
+    {
+        var fileName = $"{entry.NameWithoutExtension}.metadata.json";
+        var path = Path.Combine(UserSettings.Default.PropertiesDirectory,
+            UserSettings.Default.KeepDirectoryStructure ? entry.Directory : "", fileName).Replace('\\', '/');
+
+        if (IsAlreadyExported(path, fileName, updateUi)) return;
+
+        try
+        {
+            var package = Provider.LoadPackage(entry);
+            Directory.CreateDirectory(path.SubstringBeforeLast('/'));
+
+            var text = JsonConvert.SerializeObject(package, Formatting.Indented);
+            if (UserSettings.Default.ConvertUint64ToFloat)
+            {
+                try { text = Uint64FloatConverter.Convert(text); }
+                catch (Exception e) { Log.Warning(e, "Failed to convert uint64 floats in {FileName} metadata, saving as-is", entry.Name); }
+            }
+            File.WriteAllText(path, text);
+
+            Interlocked.Increment(ref ExportedCount);
+            Log.Information("Successfully exported metadata for {FileName}", entry.Name);
+            if (updateUi)
+            {
+                FLogger.Append(ELog.Information, () =>
+                {
+                    FLogger.Text("Successfully exported metadata ", Constants.WHITE);
+                    FLogger.Link(fileName, path, true);
+                });
+            }
+        }
+        catch (Exception e)
+        {
+            Interlocked.Increment(ref FailedExportCount);
+            Log.Error(e, "{FileName} metadata could not be exported", entry.Name);
+            if (updateUi)
+                FLogger.Append(ELog.Error, () => FLogger.Text($"Could not export metadata for '{entry.Name}'", Constants.WHITE, true));
+        }
+    }
+
+    /// <summary>
+    /// centralized "already exported" check used by every export entry point;
+    /// when SkipAlreadyExportedFiles is on and the target file already exists, logs a warning
+    /// with a clickable link to the containing folder (same UX as a successful export) and returns true
+    /// </summary>
+    private bool IsAlreadyExported(string path, string label, bool updateUi)
+    {
+        if (!UserSettings.Default.SkipAlreadyExportedFiles || !File.Exists(path))
+            return false;
+
+        Interlocked.Increment(ref SkippedExportCount);
+        Log.Information("Skipped '{FileName}': already exported", label);
+        if (updateUi)
+        {
+            FLogger.Append(ELog.Warning, () =>
+            {
+                FLogger.Text("Already exported ", Constants.WHITE);
+                FLogger.Link(label, path, true);
+            });
+        }
+        return true;
+    }
+
     public void FindReferences(GameFile entry)
     {
         var refs = Provider.ScanForPackageRefs(entry);
@@ -1649,6 +1845,12 @@ public class CUE4ParseViewModel : ViewModel
         if (saveAudio)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            var predictedPath = UserSettings.Default.ConvertAudioOnBulkExport && extLower is not "wav"
+                ? Path.ChangeExtension(savedAudioPath, "wav")
+                : savedAudioPath;
+            if (IsAlreadyExported(predictedPath, Path.GetFileName(predictedPath), updateUi)) return;
+
             var directory = Path.GetDirectoryName(savedAudioPath);
             Directory.CreateDirectory(directory);
 
@@ -1699,6 +1901,21 @@ public class CUE4ParseViewModel : ViewModel
 
     private void SaveExport(UObject export, bool updateUi = true)
     {
+        // best-effort pre-check: models/animations/materials can produce several files with
+        // different extensions depending on the chosen format, so we look for *any* file already
+        // sharing the export's expected base name in its expected folder before doing the heavy work
+        if (UserSettings.Default.SkipAlreadyExportedFiles)
+        {
+            var packagePath = (export.Owner?.Provider?.FixPath(export.Owner?.Name ?? export.GetPathName()) ?? export.GetPathName()).SubstringBeforeLast('.');
+            var relativePath = CUE4Parse_Conversion.ExporterBase.GetExportSavePath(packagePath, export.Name);
+            var expectedDir = Path.Combine(UserSettings.Default.ModelDirectory, relativePath.SubstringBeforeLast('/')).Replace('\\', '/');
+            if (Directory.Exists(expectedDir) && Directory.EnumerateFiles(expectedDir, $"{export.Name}.*").Any())
+            {
+                IsAlreadyExported(Path.Combine(expectedDir, export.Name), export.Name, updateUi);
+                return;
+            }
+        }
+
         var toSave = new Exporter(export, UserSettings.Default.ExportOptions);
         var toSaveDirectory = new DirectoryInfo(UserSettings.Default.ModelDirectory);
         if (toSave.TryWriteToDir(toSaveDirectory, out var label, out var savedFilePath))
@@ -1728,25 +1945,46 @@ public class CUE4ParseViewModel : ViewModel
         if (Provider.TrySavePackage(entry, out var assets))
         {
             string path = UserSettings.Default.RawDataDirectory;
+            var anySkipped = false;
+            var anyWritten = false;
             Parallel.ForEach(assets, kvp =>
             {
+                var targetPath = Path.Combine(UserSettings.Default.RawDataDirectory, UserSettings.Default.KeepDirectoryStructure ? kvp.Key : kvp.Key.SubstringAfterLast('/')).Replace('\\', '/');
+                if (UserSettings.Default.SkipAlreadyExportedFiles && File.Exists(targetPath))
+                {
+                    lock (_rawData)
+                    {
+                        anySkipped = true;
+                        if (!anyWritten) path = targetPath;
+                    }
+                    return;
+                }
+
                 lock (_rawData)
                 {
-                    path = Path.Combine(UserSettings.Default.RawDataDirectory, UserSettings.Default.KeepDirectoryStructure ? kvp.Key : kvp.Key.SubstringAfterLast('/')).Replace('\\', '/');
+                    path = targetPath;
                     Directory.CreateDirectory(path.SubstringBeforeLast('/'));
                     File.WriteAllBytes(path, kvp.Value);
+                    anyWritten = true;
                 }
             });
 
-            Interlocked.Increment(ref ExportedCount);
-            Log.Information("{FileName} successfully exported", entry.Name);
-            if (updateUi)
+            if (anyWritten)
             {
-                FLogger.Append(ELog.Information, () =>
+                Interlocked.Increment(ref ExportedCount);
+                Log.Information("{FileName} successfully exported", entry.Name);
+                if (updateUi)
                 {
-                    FLogger.Text("Successfully exported ", Constants.WHITE);
-                    FLogger.Link(entry.Name, path, true);
-                });
+                    FLogger.Append(ELog.Information, () =>
+                    {
+                        FLogger.Text("Successfully exported ", Constants.WHITE);
+                        FLogger.Link(entry.Name, path, true);
+                    });
+                }
+            }
+            else if (anySkipped)
+            {
+                IsAlreadyExported(path, entry.Name, updateUi);
             }
         }
         else
