@@ -17,7 +17,6 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <StartupObject>FModel.App</StartupObject>
-    <BaseOutputPath></BaseOutputPath>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -26,6 +25,7 @@
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
     <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
     <NoWarn>NU1701</NoWarn>
   </PropertyGroup>
 

@@ -86,9 +86,9 @@ public partial class MainWindow
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         var newOrUpdated = UserSettings.Default.ShowChangelog;
-#if !DEBUG
-        ApplicationService.ApiEndpointView.FModelApi.CheckForUpdates(true);
-#endif
+        // Update checks are disabled on this fork (FModel Vibe) - the upstream update server compares
+        // against the real FModel's commit hash/releases, which don't apply here and would only prompt
+        // users to "update" to a build that isn't this fork.
 
         switch (UserSettings.Default.AesReload)
         {
