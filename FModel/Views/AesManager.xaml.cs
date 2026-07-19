@@ -13,6 +13,13 @@ public partial class AesManager
     {
         DataContext = _applicationView;
         InitializeComponent();
+        Loaded += OnLoaded;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        // Pick up a main key typed on the Profiles settings tab without reopening FModel.
+        _applicationView.AesManager.SyncMainKeyFromSettings();
     }
 
     private void OnClick(object sender, RoutedEventArgs e)

@@ -268,8 +268,11 @@ public class SettingsViewModel : ViewModel
 
         AesEndpoint = UserSettings.Default.CurrentDir.Endpoints[0];
         MappingEndpoint = UserSettings.Default.CurrentDir.Endpoints[1];
+        SyncLocalMappingOverwrite();
         MappingEndpoint.PropertyChanged += (_, args) =>
         {
+            if (args.PropertyName == nameof(EndpointSettings.FilePath))
+                SyncLocalMappingOverwrite();
             if (!_mappingsUpdate)
                 _mappingsUpdate = args.PropertyName is "Overwrite" or "FilePath";
         };
@@ -324,6 +327,24 @@ public class SettingsViewModel : ViewModel
         TextureExportFormats = new ReadOnlyObservableCollection<ETextureFormat>(new ObservableCollection<ETextureFormat>(EnumerateTextureExportFormat()));
         Platforms = new ReadOnlyObservableCollection<ETexturePlatform>(new ObservableCollection<ETexturePlatform>(EnumerateUePlatforms()));
         JsonHighlightThemes = new ReadOnlyObservableCollection<EJsonHighlightTheme>(new ObservableCollection<EJsonHighlightTheme>(EnumerateJsonHighlightThemes()));
+    }
+
+    /// <summary>
+    /// True when pak folder or UE version differ from when Settings was opened (needs restart).
+    /// </summary>
+    public bool HasPendingRestartChanges()
+        => _ueGameSnapshot != SelectedUeGame
+           || _gameSnapshot != UserSettings.Default.GameDirectory;
+
+    /// <summary>
+    /// Local mapping override follows the file path: on when a path is set, off when cleared.
+    /// </summary>
+    private void SyncLocalMappingOverwrite()
+    {
+        if (MappingEndpoint == null) return;
+        var shouldOverwrite = !string.IsNullOrWhiteSpace(MappingEndpoint.FilePath);
+        if (MappingEndpoint.Overwrite != shouldOverwrite)
+            MappingEndpoint.Overwrite = shouldOverwrite;
     }
 
     public bool Save(out List<SettingsOut> whatShouldIDo)

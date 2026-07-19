@@ -17,6 +17,10 @@ using FModel.Views.Resources.Controls;
 using ICSharpCode.AvalonEdit;
 using Microsoft.Win32;
 using Ookii.Dialogs.Wpf;
+using MessageBox = AdonisUI.Controls.MessageBox;
+using MessageBoxButton = AdonisUI.Controls.MessageBoxButton;
+using MessageBoxImage = AdonisUI.Controls.MessageBoxImage;
+using MessageBoxResult = AdonisUI.Controls.MessageBoxResult;
 
 namespace FModel.Views;
 
@@ -68,6 +72,9 @@ public partial class SettingsView
         _applicationView.CUE4Parse.Provider.ReadScriptData = UserSettings.Default.ReadScriptData;
         _applicationView.CUE4Parse.Provider.ReadShaderMaps = UserSettings.Default.ReadShaderMaps;
 
+        // Profiles/General can edit AES without opening AES Manager — remount so Archives updates.
+        await _applicationView.RemountIfAesSettingsChangedAsync();
+
         UserSettings.Save();
     }
 
@@ -87,7 +94,9 @@ public partial class SettingsView
 
     private void OnBrowseDirectories(object sender, RoutedEventArgs e)
     {
-        if (TryBrowse(out var path)) UserSettings.Default.GameDirectory = path;
+        if (!TryBrowse(out var path)) return;
+        UserSettings.Default.GameDirectory = path;
+        ProfileManager.SyncCurrentDirToGameDirectory();
     }
 
     private void OnBrowseRawData(object sender, RoutedEventArgs e)
@@ -115,23 +124,130 @@ public partial class SettingsView
         if (TryBrowse(out var path)) UserSettings.Default.ModelDirectory = path;
     }
 
+    private void OnProfileLoad(object sender, RoutedEventArgs e)
+    {
+        _applicationView.ProfilesView.LoadSelected();
+    }
+
     private void OnProfileSave(object sender, RoutedEventArgs e)
     {
-        var current = _applicationView.ProfilesView.SelectedProfile;
-        if (string.IsNullOrEmpty(current))
+        var name = _applicationView.ProfilesView.SelectedProfile
+                   ?? _applicationView.ProfilesView.ActiveProfileName;
+        if (string.IsNullOrEmpty(name))
         {
             OnProfileSaveAs(sender, e);
             return;
         }
 
-        _applicationView.ProfilesView.SaveAs(current);
+        if (!_applicationView.ProfilesView.IsPreviewingOtherProfile)
+            FlushLiveSettingsForProfileSave();
+        _applicationView.ProfilesView.SaveAs(name);
+        if (!_applicationView.ProfilesView.IsPreviewingOtherProfile)
+            PromptRestartIfNeededAfterProfileSave();
     }
 
     private void OnProfileSaveAs(object sender, RoutedEventArgs e)
     {
         var dialog = new ProfileNameDialog("Save Profile As");
-        if (dialog.ShowDialog().GetValueOrDefault())
-            _applicationView.ProfilesView.SaveAs(dialog.ProfileName);
+        if (!dialog.ShowDialog().GetValueOrDefault()) return;
+
+        if (!_applicationView.ProfilesView.IsPreviewingOtherProfile)
+            FlushLiveSettingsForProfileSave();
+        _applicationView.ProfilesView.SaveAs(dialog.ProfileName);
+        if (!_applicationView.ProfilesView.IsPreviewingOtherProfile)
+            PromptRestartIfNeededAfterProfileSave();
+    }
+
+    /// <summary>
+    /// UE version lives on SettingsView until OK; flush it into CurrentDir so profiles capture it.
+    /// Also re-key per-game settings if the pak folder changed.
+    /// </summary>
+    private void FlushLiveSettingsForProfileSave()
+    {
+        _applicationView.ProfilesView.PushPreviewToLive();
+        if (UserSettings.Default.CurrentDir != null)
+            UserSettings.Default.CurrentDir.UeVersion = _applicationView.ProfilesView.Preview.UeVersion;
+        ProfileManager.SyncCurrentDirToGameDirectory();
+    }
+
+    private void OnProfileBrowseRawData(object sender, RoutedEventArgs e)
+    {
+        if (TryBrowse(out var path))
+            _applicationView.ProfilesView.Preview.RawDataDirectory = path;
+    }
+
+    private void OnProfileBrowseProperties(object sender, RoutedEventArgs e)
+    {
+        if (TryBrowse(out var path))
+            _applicationView.ProfilesView.Preview.PropertiesDirectory = path;
+    }
+
+    private void OnProfileBrowseTexture(object sender, RoutedEventArgs e)
+    {
+        if (TryBrowse(out var path))
+            _applicationView.ProfilesView.Preview.TextureDirectory = path;
+    }
+
+    private void OnProfileBrowseAudio(object sender, RoutedEventArgs e)
+    {
+        if (TryBrowse(out var path))
+            _applicationView.ProfilesView.Preview.AudioDirectory = path;
+    }
+
+    private void OnProfileBrowseModels(object sender, RoutedEventArgs e)
+    {
+        if (TryBrowse(out var path))
+            _applicationView.ProfilesView.Preview.ModelDirectory = path;
+    }
+
+    private void OnProfileBrowseCode(object sender, RoutedEventArgs e)
+    {
+        if (TryBrowse(out var path))
+            _applicationView.ProfilesView.Preview.CodeDirectory = path;
+    }
+
+    private void OnProfileBrowseDirectories(object sender, RoutedEventArgs e)
+    {
+        if (!TryBrowse(out var path)) return;
+        _applicationView.ProfilesView.Preview.GameDirectory = path;
+    }
+
+    private void OnProfileBrowseMappings(object sender, RoutedEventArgs e)
+    {
+        var openFileDialog = new OpenFileDialog
+        {
+            Title = "Choose a mapping file",
+            Filter = "Mapping Files (*.usmap;*.jmap;*.jmap.gz)|*.usmap;*.jmap;*.jmap.gz|All Files (*.*)|*.*",
+            Multiselect = false
+        };
+        if (!openFileDialog.ShowDialog().GetValueOrDefault()) return;
+        _applicationView.ProfilesView.Preview.MappingFilePath = openFileDialog.FileName;
+    }
+
+    private void PromptRestartIfNeededAfterProfileSave()
+    {
+        if (!_settingsView.HasPendingRestartChanges())
+        {
+            // Pak/UE unchanged — still remount if AES was edited on this tab.
+            _ = _applicationView.RemountIfAesSettingsChangedAsync();
+            return;
+        }
+
+        var result = MessageBox.Show(
+            "Pak folder or UE version changed.\nRestart FModel now to apply these changes?",
+            "Restart needed",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes)
+        {
+            _ = _applicationView.RemountIfAesSettingsChangedAsync();
+            return;
+        }
+
+        UserSettings.Save();
+        Close();
+        _applicationView.Restart();
     }
 
     private void OnProfileRename(object sender, RoutedEventArgs e)
@@ -169,6 +285,7 @@ public partial class SettingsView
         if (!openFileDialog.ShowDialog().GetValueOrDefault())
             return;
 
+        // FilePath change syncs Overwrite on via SettingsViewModel.
         _applicationView.SettingsView.MappingEndpoint.FilePath = openFileDialog.FileName;
     }
 

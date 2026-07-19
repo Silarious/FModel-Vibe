@@ -93,6 +93,36 @@ public class AesManagerViewModel : ViewModel
         // Log.Information("{@Json}", UserSettings.Default);
     }
 
+    /// <summary>
+    /// Pull the main key from <see cref="UserSettings"/> into the AES Manager UI.
+    /// Returns true when the provider should remount (key differs from what was last applied).
+    /// </summary>
+    public bool SyncMainKeyFromSettings()
+    {
+        _keysFromSettings ??= UserSettings.Default.CurrentDir?.AesKeys;
+        if (_keysFromSettings == null) return false;
+
+        var settingsKey = Helper.FixKey(_keysFromSettings.MainKey);
+        _keysFromSettings.MainKey = settingsKey;
+
+        if (AesKeys is not { Count: > 0 })
+        {
+            _mainKey.Key = settingsKey;
+            if (string.IsNullOrEmpty(settingsKey)) return false;
+            HasChange = true;
+            return true;
+        }
+
+        var appliedKey = Helper.FixKey(AesKeys[0].Key);
+        if (appliedKey == settingsKey)
+            return HasChange;
+
+        // Settings already hold settingsKey, so ItemPropertyChanged would not set HasChange.
+        HasChange = true;
+        AesKeys[0].Key = settingsKey;
+        return true;
+    }
+
     private IEnumerable<FileItem> EnumerateAesKeys()
     {
         yield return _mainKey;

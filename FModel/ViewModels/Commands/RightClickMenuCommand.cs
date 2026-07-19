@@ -146,10 +146,7 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
             foreach (var folder in folders)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                folderAction(folder);
-
-                var path = Path.Combine(dirType, UserSettings.Default.KeepDirectoryStructure ? folder.PathAtThisPoint : folder.PathAtThisPoint.SubstringAfterLast('/')).Replace('\\', '/');
-                LogExport(contextViewModel, folder.PathAtThisPoint, path, dirType, filetype);
+                ExportFolderWithPerChildLogs(contextViewModel, cancellationToken, folder, bulktype, folderAction, dirType, filetype);
             }
 
             Action<GameFile, EBulkType, bool> fileAction = bulktype switch
@@ -179,6 +176,54 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
                 }
             }
         });
+    }
+
+    /// <summary>
+    /// Export a selected folder, emitting one success log per immediate child folder
+    /// (folder name, file count, clickable disk path). Leaf folders still get a single log.
+    /// </summary>
+    private void ExportFolderWithPerChildLogs(
+        ApplicationViewModel contextViewModel,
+        CancellationToken cancellationToken,
+        TreeItem folder,
+        EBulkType bulktype,
+        Action<TreeItem> folderAction,
+        string dirType,
+        string filetype)
+    {
+        var children = folder.Folders.ToArray();
+        if (children.Length == 0)
+        {
+            folderAction(folder);
+            LogFolderExport(contextViewModel, folder, dirType, filetype);
+            return;
+        }
+
+        // Assets sitting directly on the selected folder (not in a child).
+        Interlocked.Exchange(ref contextViewModel.CUE4Parse.ExportedCount, 0);
+        Interlocked.Exchange(ref contextViewModel.CUE4Parse.FailedExportCount, 0);
+        contextViewModel.CUE4Parse.ExportAssetsAtFolderLevel(cancellationToken, folder, bulktype | EBulkType.Auto);
+
+        if (contextViewModel.CUE4Parse.ExportedCount > 0 || contextViewModel.CUE4Parse.FailedExportCount > 0)
+            LogFolderExport(contextViewModel, folder, dirType, filetype);
+
+        foreach (var child in children)
+        {
+            Interlocked.Exchange(ref contextViewModel.CUE4Parse.ExportedCount, 0);
+            Interlocked.Exchange(ref contextViewModel.CUE4Parse.FailedExportCount, 0);
+            folderAction(child);
+            LogFolderExport(contextViewModel, child, dirType, filetype);
+        }
+    }
+
+    private void LogFolderExport(ApplicationViewModel contextViewModel, TreeItem folder, string dirType, string filetype)
+    {
+        var path = Path.Combine(
+            dirType,
+            UserSettings.Default.KeepDirectoryStructure
+                ? folder.PathAtThisPoint
+                : folder.Header).Replace('\\', '/');
+        LogExport(contextViewModel, folder.Header, path, dirType, filetype);
     }
 
     private void LogExport(ApplicationViewModel contextViewModel, string directory, string path, string basePath, string fileType)

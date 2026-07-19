@@ -65,7 +65,6 @@ using CUE4Parse.UE4.Wwise;
 using CUE4Parse.Utils;
 using CUE4Parse_Conversion;
 using CUE4Parse_Conversion.Sounds;
-using CUE4Parse.GameTypes.LordOfMysteries.FileProvider;
 using CUE4Parse.MappingsProvider.Jmap;
 using CUE4Parse.MappingsProvider.Usmap;
 using EpicManifestParser;
@@ -166,6 +165,7 @@ public class CUE4ParseViewModel : ViewModel
     public int ExportedCount;
     public int FailedExportCount;
     public int SkippedExportCount;
+    public int ProtectedExportCount;
 
     public CUE4ParseViewModel()
     {
@@ -211,7 +211,7 @@ public class CUE4ParseViewModel : ViewModel
                     _ when versionContainer.Game is EGame.GAME_AshEchoes => new AEDefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer),
                     _ when versionContainer.Game is EGame.GAME_BlackStigma => new DefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, StringComparer.Ordinal),
                     _ when versionContainer.Game is EGame.GAME_HonorofKingsWorld => new HoKWDefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer),
-                    _ when versionContainer.Game is EGame.GAME_LordOfMysteries => new LoMDefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer),
+                    _ when versionContainer.Game is EGame.GAME_ArcRaiders => CreateArcRaidersProvider(gameDirectory, versionContainer, pathComparer),
                     _ => new DefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer)
                 };
 
@@ -377,8 +377,17 @@ public class CUE4ParseViewModel : ViewModel
     /// </summary>
     private void AutoLoadAllFiles()
     {
+        if (ShouldBlockAutoLoadForMissingAes())
+        {
+            Application.Current.Dispatcher.Invoke(() =>
+                FLogger.Append(ELog.Warning, () =>
+                    FLogger.Text(
+                        "Auto Load All Files was blocked: archives are encrypted and no AES key is set. Add a key in Profiles or AES Manager, then load manually.",
+                        Constants.WHITE, true)));
+            return;
+        }
+
         if (Provider.Files.Count == 0) return;
-        if (Provider.Keys.Count == 0 && Provider.RequiredKeys.Count > 0) return; // still encrypted, can't list yet
 
         Application.Current.Dispatcher.Invoke(() =>
         {
@@ -397,6 +406,22 @@ public class CUE4ParseViewModel : ViewModel
 
         ApplicationService.ApplicationView.Status.UpdateStatusLabel($"{entries.Count:### ### ###} Packages");
         AssetsFolder.BulkPopulate(entries);
+    }
+
+    /// <summary>
+    /// Auto-load is useless until encrypted archives can be mounted; ignore the toggle until a key exists.
+    /// </summary>
+    private bool ShouldBlockAutoLoadForMissingAes()
+    {
+        var encryptedPending = Provider.RequiredKeys.Count > 0
+                               || Provider.UnloadedVfs.Any(r => r.IsEncrypted);
+        if (!encryptedPending) return false;
+
+        var aes = UserSettings.Default.CurrentDir?.AesKeys;
+        if (aes == null) return true;
+
+        var mainKey = Helper.FixKey(aes.MainKey);
+        return mainKey.Length != 66 && !aes.HasDynamicKeys;
     }
 
     public void ClearProvider()
@@ -634,6 +659,19 @@ public class CUE4ParseViewModel : ViewModel
         }
     }
 
+    private static AbstractVfsFileProvider CreateArcRaidersProvider(
+        string gameDirectory,
+        VersionContainer versionContainer,
+        StringComparer pathComparer)
+    {
+        Log.Information("Arc Raiders provider (on-read Theia): {Source}", gameDirectory);
+        return new ArcRaidersFileProvider(
+            gameDirectory,
+            SearchOption.AllDirectories,
+            versionContainer,
+            pathComparer);
+    }
+
     /// <summary>
     /// order the given assets list according to the "export smallest files first" user setting
     /// (no-op, in original order, when the toggle is disabled)
@@ -661,6 +699,44 @@ public class CUE4ParseViewModel : ViewModel
         }
 
         foreach (var f in folder.Folders) BulkFolder(cancellationToken, f, action);
+    }
+
+    /// <summary>Export/extract only assets that live directly on <paramref name="folder"/> (no child folders).</summary>
+    public void ExportAssetsAtFolderLevel(CancellationToken cancellationToken, TreeItem folder, EBulkType bulktype)
+    {
+        switch (bulktype & ~EBulkType.Auto)
+        {
+            case EBulkType.Raw:
+                Parallel.ForEach(OrderForExport(folder.AssetsList.Assets), entry =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    ExportData(entry.Asset, false);
+                });
+                break;
+            case EBulkType.Metadata:
+                Parallel.ForEach(OrderForExport(folder.AssetsList.Assets), entry =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!entry.Asset.IsUePackage) return;
+                    ExportMetadata(entry.Asset, false);
+                });
+                break;
+            default:
+                foreach (var entry in OrderForExport(folder.AssetsList.Assets))
+                {
+                    Thread.Yield();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        Extract(cancellationToken, entry.Asset, TabControl.HasNoTabs, bulktype);
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                }
+                break;
+        }
     }
 
     public void ExportFolder(CancellationToken cancellationToken, TreeItem folder)
@@ -708,33 +784,61 @@ public class CUE4ParseViewModel : ViewModel
         };
         if (string.IsNullOrEmpty(dirType)) return;
 
+        Action<TreeItem> folderAction = bulktype switch
+        {
+            EBulkType.Raw => f => ExportFolder(cancellationToken, f),
+            EBulkType.Metadata => f => ExportMetadataFolder(cancellationToken, f),
+            _ => f => ExtractFolder(cancellationToken, f, bulktype | EBulkType.Auto),
+        };
+
+        var children = folder.Folders.ToArray();
+        if (children.Length == 0)
+        {
+            Interlocked.Exchange(ref ExportedCount, 0);
+            Interlocked.Exchange(ref FailedExportCount, 0);
+            Interlocked.Exchange(ref SkippedExportCount, 0);
+            folderAction(folder);
+            LogQueueFolderExport(folder, dirType, filetype);
+            return;
+        }
+
         Interlocked.Exchange(ref ExportedCount, 0);
         Interlocked.Exchange(ref FailedExportCount, 0);
         Interlocked.Exchange(ref SkippedExportCount, 0);
+        ExportAssetsAtFolderLevel(cancellationToken, folder, bulktype | EBulkType.Auto);
+        if (ExportedCount > 0 || FailedExportCount > 0)
+            LogQueueFolderExport(folder, dirType, filetype);
 
-        switch (bulktype)
+        foreach (var child in children)
         {
-            case EBulkType.Raw: ExportFolder(cancellationToken, folder); break;
-            case EBulkType.Metadata: ExportMetadataFolder(cancellationToken, folder); break;
-            default: ExtractFolder(cancellationToken, folder, bulktype | EBulkType.Auto); break;
+            Interlocked.Exchange(ref ExportedCount, 0);
+            Interlocked.Exchange(ref FailedExportCount, 0);
+            Interlocked.Exchange(ref SkippedExportCount, 0);
+            folderAction(child);
+            LogQueueFolderExport(child, dirType, filetype);
         }
+    }
 
-        var path = Path.Combine(dirType, UserSettings.Default.KeepDirectoryStructure ? folder.PathAtThisPoint : folder.PathAtThisPoint.SubstringAfterLast('/')).Replace('\\', '/');
+    private void LogQueueFolderExport(TreeItem folder, string dirType, string filetype)
+    {
+        var path = Path.Combine(
+            dirType,
+            UserSettings.Default.KeepDirectoryStructure ? folder.PathAtThisPoint : folder.Header).Replace('\\', '/');
         if (ExportedCount > 0)
         {
             FLogger.Append(ELog.Information, () =>
             {
                 FLogger.Text($"[Queue] Successfully exported {ExportedCount} {filetype} from ", Constants.WHITE);
-                FLogger.Link(folder.PathAtThisPoint, Path.Exists(path) ? path : dirType, true);
+                FLogger.Link(folder.Header, Path.Exists(path) ? path : dirType, true);
             });
         }
         else if (FailedExportCount == 0)
         {
-            FLogger.Append(ELog.Warning, () => FLogger.Text($"[Queue] Failed to find any {filetype} in {folder.PathAtThisPoint}", Constants.WHITE, true));
+            FLogger.Append(ELog.Warning, () => FLogger.Text($"[Queue] Failed to find any {filetype} in {folder.Header}", Constants.WHITE, true));
         }
         else
         {
-            FLogger.Append(ELog.Error, () => FLogger.Text($"[Queue] Failed to export {FailedExportCount} {filetype} from {folder.PathAtThisPoint}", Constants.WHITE, true));
+            FLogger.Append(ELog.Error, () => FLogger.Text($"[Queue] Failed to export {FailedExportCount} {filetype} from {folder.Header}", Constants.WHITE, true));
         }
     }
 
@@ -1282,6 +1386,34 @@ public class CUE4ParseViewModel : ViewModel
         }
     }
 
+    /// <summary>
+    /// Bulk-save textures / meshes / audio from packages loaded through an external provider
+    /// (e.g. Profile Diff) without swapping the live session provider.
+    /// </summary>
+    public void ExtractAssetsFromProvider(
+        IFileProvider provider,
+        CancellationToken cancellationToken,
+        GameFile entry,
+        EBulkType bulk)
+    {
+        bulk |= EBulkType.Auto;
+        if (entry.Extension is not ("uasset" or "umap"))
+            return;
+
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            if (TabControl.HasNoTabs)
+                TabControl.AddTab(entry);
+            else
+                TabControl.SelectedTab.Entry = entry;
+        });
+
+        var result = provider.GetLoadPackageResult(entry);
+        // Visit every export so combined texture/mesh/audio bulk flags don't stop early.
+        for (var i = result.InclusiveStart; i < result.ExclusiveEnd; i++)
+            CheckExport(cancellationToken, result.Package, i, bulk);
+    }
+
     private byte[] ProcessLuaFile(byte[] data)
     {
         var result = EUnluacErrorCode.Ok;
@@ -1727,6 +1859,9 @@ public class CUE4ParseViewModel : ViewModel
                 try { text = Uint64FloatConverter.Convert(text); }
                 catch (Exception e) { Log.Warning(e, "Failed to convert uint64 floats in {FileName} metadata, saving as-is", entry.Name); }
             }
+
+            if (IsOverwriteProtected(path, fileName, Encoding.UTF8.GetByteCount(text), updateUi)) return;
+
             File.WriteAllText(path, text);
 
             Interlocked.Increment(ref ExportedCount);
@@ -1750,13 +1885,13 @@ public class CUE4ParseViewModel : ViewModel
     }
 
     /// <summary>
-    /// centralized "already exported" check used by every export entry point;
-    /// when SkipAlreadyExportedFiles is on and the target file already exists, logs a warning
-    /// with a clickable link to the containing folder (same UX as a successful export) and returns true
+    /// centralized "already exported" check used by every export entry point in this class;
+    /// per SkipAlreadyExportedMode, logs a warning with a clickable link to the containing folder
+    /// (same UX as a successful export) and returns true when the file should be skipped
     /// </summary>
     private bool IsAlreadyExported(string path, string label, bool updateUi)
     {
-        if (!UserSettings.Default.SkipAlreadyExportedFiles || !File.Exists(path))
+        if (!Helper.IsAlreadyExported(path))
             return false;
 
         Interlocked.Increment(ref SkippedExportCount);
@@ -1766,6 +1901,30 @@ public class CUE4ParseViewModel : ViewModel
             FLogger.Append(ELog.Warning, () =>
             {
                 FLogger.Text("Already exported ", Constants.WHITE);
+                FLogger.Link(label, path, true);
+            });
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// centralized overwrite-protection check used by every export entry point in this class;
+    /// only relevant when SkipAlreadyExportedMode is Disabled. Refuses the write and logs a warning
+    /// (same clickable-folder UX as the other checks) when a file already exists at this path with a
+    /// different size than what's about to be written.
+    /// </summary>
+    private bool IsOverwriteProtected(string path, string label, long newContentSize, bool updateUi)
+    {
+        if (!Helper.IsOverwriteProtected(path, newContentSize, out var existingSize))
+            return false;
+
+        Interlocked.Increment(ref ProtectedExportCount);
+        Log.Warning("Blocked '{FileName}': existing file is {ExistingSize} bytes, new export would be {NewSize} bytes - Overwrite Protection is on", label, existingSize, newContentSize);
+        if (updateUi)
+        {
+            FLogger.Append(ELog.Warning, () =>
+            {
+                FLogger.Text("Files are different and Overwrite Protection is on, refusing to overwrite ", Constants.WHITE);
                 FLogger.Link(label, path, true);
             });
         }
@@ -1869,6 +2028,8 @@ public class CUE4ParseViewModel : ViewModel
             }
             else
             {
+                if (IsOverwriteProtected(savedAudioPath, Path.GetFileName(savedAudioPath), data.LongLength, updateUi)) return;
+
                 using var stream = new FileStream(savedAudioPath, FileMode.Create, FileAccess.Write);
                 stream.Write(data);
             }
@@ -1906,14 +2067,18 @@ public class CUE4ParseViewModel : ViewModel
         // best-effort pre-check: models/animations/materials can produce several files with
         // different extensions depending on the chosen format, so we look for *any* file already
         // sharing the export's expected base name in its expected folder before doing the heavy work
-        if (UserSettings.Default.SkipAlreadyExportedFiles)
+        if (UserSettings.Default.SkipAlreadyExportedMode != ESkipAlreadyExported.Disabled)
         {
             var packagePath = (export.Owner?.Provider?.FixPath(export.Owner?.Name ?? export.GetPathName()) ?? export.GetPathName()).SubstringBeforeLast('.');
             var relativePath = CUE4Parse_Conversion.ExporterBase.GetExportSavePath(packagePath, export.Name);
             var expectedDir = Path.Combine(UserSettings.Default.ModelDirectory, relativePath.SubstringBeforeLast('/')).Replace('\\', '/');
-            if (Directory.Exists(expectedDir) && Directory.EnumerateFiles(expectedDir, $"{export.Name}.*").Any())
+            var existingMatch = Directory.Exists(expectedDir)
+                ? Directory.EnumerateFiles(expectedDir, $"{export.Name}.*")
+                    .FirstOrDefault(f => UserSettings.Default.SkipAlreadyExportedMode != ESkipAlreadyExported.ByNameAndSize || new FileInfo(f).Length > 0)
+                : null;
+            if (existingMatch != null)
             {
-                IsAlreadyExported(Path.Combine(expectedDir, export.Name), export.Name, updateUi);
+                IsAlreadyExported(existingMatch, export.Name, updateUi);
                 return;
             }
         }
@@ -1944,19 +2109,37 @@ public class CUE4ParseViewModel : ViewModel
     private readonly object _rawData = new ();
     public void ExportData(GameFile entry, bool updateUi = true)
     {
+        // most raw exports are a single file mapping 1:1 to the source entry, so this predicted path
+        // covers the common case and lets us skip before paying for TrySavePackage at all. Packages
+        // that expand into several files (bulk data, umaps, ...) still get the per-file check below
+        // as a safety net, which can only run after TrySavePackage since their names aren't known upfront.
+        var primaryPath = Path.Combine(UserSettings.Default.RawDataDirectory, UserSettings.Default.KeepDirectoryStructure ? entry.Directory : "", entry.Name).Replace('\\', '/');
+        if (IsAlreadyExported(primaryPath, entry.Name, updateUi)) return;
+
         if (Provider.TrySavePackage(entry, out var assets))
         {
             string path = UserSettings.Default.RawDataDirectory;
             var anySkipped = false;
+            var anyProtected = false;
             var anyWritten = false;
             Parallel.ForEach(assets, kvp =>
             {
                 var targetPath = Path.Combine(UserSettings.Default.RawDataDirectory, UserSettings.Default.KeepDirectoryStructure ? kvp.Key : kvp.Key.SubstringAfterLast('/')).Replace('\\', '/');
-                if (UserSettings.Default.SkipAlreadyExportedFiles && File.Exists(targetPath))
+                if (Helper.IsAlreadyExported(targetPath))
                 {
                     lock (_rawData)
                     {
                         anySkipped = true;
+                        if (!anyWritten) path = targetPath;
+                    }
+                    return;
+                }
+
+                if (Helper.IsOverwriteProtected(targetPath, kvp.Value.LongLength, out _))
+                {
+                    lock (_rawData)
+                    {
+                        anyProtected = true;
                         if (!anyWritten) path = targetPath;
                     }
                     return;
@@ -1987,6 +2170,19 @@ public class CUE4ParseViewModel : ViewModel
             else if (anySkipped)
             {
                 IsAlreadyExported(path, entry.Name, updateUi);
+            }
+            else if (anyProtected)
+            {
+                Interlocked.Increment(ref ProtectedExportCount);
+                Log.Warning("Blocked '{FileName}': existing file size differs from the new export and Overwrite Protection is on", entry.Name);
+                if (updateUi)
+                {
+                    FLogger.Append(ELog.Warning, () =>
+                    {
+                        FLogger.Text("Files are different and Overwrite Protection is on, refusing to overwrite ", Constants.WHITE);
+                        FLogger.Link(entry.Name, path, true);
+                    });
+                }
             }
         }
         else

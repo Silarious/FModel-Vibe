@@ -107,6 +107,22 @@ public enum EMetadataExport
     AppendToJson
 }
 
+/// <summary>
+/// How "already exported" detection decides to skip a file. Both non-disabled modes are cheap
+/// filesystem metadata checks (no reading/reprocessing of the actual export), since doing anything
+/// more thorough (e.g. comparing against the freshly generated output) would require doing the
+/// expensive work first, defeating the point of skipping it.
+/// </summary>
+public enum ESkipAlreadyExported
+{
+    [Description("Disabled")]
+    Disabled,
+    [Description("Skip Based on File Name")]
+    ByName,
+    [Description("Skip Based on File Name and Size")]
+    ByNameAndSize
+}
+
 [Flags]
 public enum EBulkType
 {

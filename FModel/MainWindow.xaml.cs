@@ -208,6 +208,11 @@ public partial class MainWindow
         ApplicationService.ApplicationView.ProfilesView.Refresh();
     }
 
+    private void OnLoadSelectedProfile(object sender, RoutedEventArgs e)
+    {
+        ApplicationService.ApplicationView.ProfilesView.LoadSelected();
+    }
+
     private void OnRefViewClick(object sender, RoutedEventArgs e)
     {
         var searchView = Helper.GetWindow<SearchView>("Search For Packages", () => new SearchView().Show());

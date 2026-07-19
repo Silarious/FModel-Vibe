@@ -153,4 +153,42 @@ public static class Helper
 
         return assembly.GetManifestResourceStream(resourceName);
     }
+
+    /// <summary>
+    /// Centralized "already exported" check used by every export entry point. Both non-disabled modes
+    /// are deliberately cheap filesystem metadata reads (never re-reading/reprocessing the actual
+    /// asset), so this is safe to call as early as possible - ideally before doing any of the expensive
+    /// package loading/decoding/converting work, not just right before the final write.
+    /// ByName: does a file already exist at this path.
+    /// ByNameAndSize: same, plus the existing file must be non-empty (> 0 bytes) - guards against
+    /// treating a zero-byte file left behind by an interrupted/crashed previous export as "done".
+    /// </summary>
+    public static bool IsAlreadyExported(string path)
+    {
+        return Settings.UserSettings.Default.SkipAlreadyExportedMode switch
+        {
+            ESkipAlreadyExported.Disabled => false,
+            ESkipAlreadyExported.ByName => File.Exists(path),
+            ESkipAlreadyExported.ByNameAndSize => File.Exists(path) && new FileInfo(path).Length > 0,
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Overwrite Protection only matters when SkipAlreadyExportedMode is Disabled - if skipping is on,
+    /// an existing file is never touched in the first place, so there's nothing to protect against.
+    /// When enabled, refuses to overwrite a destination file that already exists with a different size
+    /// than what's about to be written - a cheap, purely size-based guard against clobbering files that
+    /// came from a different game version/build (e.g. output directories pointed at the wrong place).
+    /// </summary>
+    public static bool IsOverwriteProtected(string path, long newContentSize, out long existingSize)
+    {
+        existingSize = 0;
+        if (!Settings.UserSettings.Default.OverwriteProtection) return false;
+        if (Settings.UserSettings.Default.SkipAlreadyExportedMode != ESkipAlreadyExported.Disabled) return false;
+        if (!File.Exists(path)) return false;
+
+        existingSize = new FileInfo(path).Length;
+        return existingSize != newContentSize;
+    }
 }

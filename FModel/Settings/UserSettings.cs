@@ -24,6 +24,7 @@ namespace FModel.Settings
     public sealed class UserSettings : ViewModel
     {
         public static UserSettings Default { get; set; }
+        public static readonly ESkipAlreadyExported[] SkipAlreadyExportedModes = Enum.GetValues<ESkipAlreadyExported>();
         public static readonly string AppDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FModel_Vibe");
 #if DEBUG
         public static readonly string FilePath = Path.Combine(AppDataFolder, "AppSettings_Debug.json");
@@ -40,7 +41,7 @@ namespace FModel.Settings
         public static void Save()
         {
             if (!_bSave || Default == null) return;
-            Default.PerDirectory[Default.CurrentDir.GameDirectory] = Default.CurrentDir;
+            ProfileManager.SyncCurrentDirToGameDirectory();
             File.WriteAllText(FilePath, JsonConvert.SerializeObject(Default, Formatting.Indented));
         }
 
@@ -206,11 +207,25 @@ namespace FModel.Settings
             set => SetProperty(ref _keepDirectoryStructure, value);
         }
 
-        private bool _skipAlreadyExportedFiles = true;
-        public bool SkipAlreadyExportedFiles
+        private ESkipAlreadyExported _skipAlreadyExportedMode = ESkipAlreadyExported.ByName;
+        public ESkipAlreadyExported SkipAlreadyExportedMode
         {
-            get => _skipAlreadyExportedFiles;
-            set => SetProperty(ref _skipAlreadyExportedFiles, value);
+            get => _skipAlreadyExportedMode;
+            set => SetProperty(ref _skipAlreadyExportedMode, value);
+        }
+
+        private bool _overwriteProtection;
+        /// <summary>
+        /// only relevant while SkipAlreadyExportedMode is Disabled (if skipping is on, existing files
+        /// are never touched in the first place). Guards against clobbering files that came from a
+        /// different game version/build (e.g. output directories set up wrong): if a destination file
+        /// already exists and its size differs from the freshly generated content, the write is refused
+        /// instead of silently overwriting it.
+        /// </summary>
+        public bool OverwriteProtection
+        {
+            get => _overwriteProtection;
+            set => SetProperty(ref _overwriteProtection, value);
         }
 
         private bool _exportSmallestFilesFirst;

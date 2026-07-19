@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Windows;
 using System.Windows.Media.Imaging;
@@ -363,6 +364,14 @@ public class TabItem : ViewModel
 
     public void SetDocumentText(string text, bool save, bool updateUi)
     {
+        // Bulk exports: write JSON straight to disk — AvalonEdit Document.Text on the UI thread
+        // dominates wall time for tiny DA_/WBP_ assets.
+        if (save && !updateUi)
+        {
+            SavePropertyText(text, updateUi: false);
+            return;
+        }
+
         Application.Current.Dispatcher.Invoke(() =>
         {
             Document ??= new TextDocument();
@@ -388,6 +397,7 @@ public class TabItem : ViewModel
     private void SaveImage(TabImage image, string path, string fileName, bool updateUi)
     {
         if (AlreadyExportedCheck(path, fileName, updateUi)) return;
+        if (image?.ImageBuffer != null && OverwriteProtectedCheck(path, fileName, image.ImageBuffer.LongLength, updateUi)) return;
 
         SaveImage(image, path);
         SaveCheck(path, fileName, updateUi);
@@ -402,22 +412,30 @@ public class TabItem : ViewModel
 
     public void SaveProperty(bool updateUi)
     {
+        SavePropertyText(Document.Text, updateUi);
+    }
+
+    /// <summary>Write properties JSON without touching AvalonEdit (bulk-export fast path).</summary>
+    public void SavePropertyText(string text, bool updateUi)
+    {
+        if (Entry is null) return;
+
         var fileName = Path.ChangeExtension(Entry.Name, ".json");
         var directory = Path.Combine(UserSettings.Default.PropertiesDirectory,
             UserSettings.Default.KeepDirectoryStructure ? Entry.Directory : "", fileName).Replace('\\', '/');
 
         if (AlreadyExportedCheck(directory, fileName, updateUi)) return;
 
-        Directory.CreateDirectory(directory.SubstringBeforeLast('/'));
-
-        var text = Document.Text;
         if (UserSettings.Default.ConvertUint64ToFloat)
         {
             try { text = Uint64FloatConverter.Convert(text); }
             catch (Exception e) { Log.Warning(e, "Failed to convert uint64 floats in {FileName}, saving as-is", fileName); }
         }
 
-        Application.Current.Dispatcher.Invoke(() => File.WriteAllText(directory, text));
+        if (OverwriteProtectedCheck(directory, fileName, Encoding.UTF8.GetByteCount(text), updateUi)) return;
+
+        Directory.CreateDirectory(directory.SubstringBeforeLast('/'));
+        File.WriteAllText(directory, text);
         SaveCheck(directory, fileName, updateUi);
     }
     public void SaveDecompiled(bool updateUi)
@@ -427,6 +445,7 @@ public class TabItem : ViewModel
             UserSettings.Default.KeepDirectoryStructure ? Entry.Directory : "", fileName).Replace('\\', '/');
 
         if (AlreadyExportedCheck(directory, fileName, updateUi)) return;
+        if (OverwriteProtectedCheck(directory, fileName, Encoding.UTF8.GetByteCount(Document.Text), updateUi)) return;
 
         Directory.CreateDirectory(directory.SubstringBeforeLast('/'));
 
@@ -440,7 +459,7 @@ public class TabItem : ViewModel
     /// </summary>
     private bool AlreadyExportedCheck(string path, string fileName, bool updateUi)
     {
-        if (!UserSettings.Default.SkipAlreadyExportedFiles || !File.Exists(path))
+        if (!Helper.IsAlreadyExported(path))
             return false;
 
         Interlocked.Increment(ref ApplicationService.ApplicationView.CUE4Parse.SkippedExportCount);
@@ -450,6 +469,27 @@ public class TabItem : ViewModel
             FLogger.Append(ELog.Warning, () =>
             {
                 FLogger.Text("Already exported ", Constants.WHITE);
+                FLogger.Link(fileName, path, true);
+            });
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// mirrors CUE4ParseViewModel's overwrite-protection check for the save paths that live on TabItem
+    /// </summary>
+    private bool OverwriteProtectedCheck(string path, string fileName, long newContentSize, bool updateUi)
+    {
+        if (!Helper.IsOverwriteProtected(path, newContentSize, out var existingSize))
+            return false;
+
+        Interlocked.Increment(ref ApplicationService.ApplicationView.CUE4Parse.ProtectedExportCount);
+        Log.Warning("Blocked '{FileName}': existing file is {ExistingSize} bytes, new export would be {NewSize} bytes - Overwrite Protection is on", fileName, existingSize, newContentSize);
+        if (updateUi)
+        {
+            FLogger.Append(ELog.Warning, () =>
+            {
+                FLogger.Text("Files are different and Overwrite Protection is on, refusing to overwrite ", Constants.WHITE);
                 FLogger.Link(fileName, path, true);
             });
         }

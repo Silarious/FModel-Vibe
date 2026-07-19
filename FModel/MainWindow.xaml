@@ -94,6 +94,15 @@
                             </Viewbox>
                         </MenuItem.Icon>
                     </MenuItem>
+                    <MenuItem Header="Export Decrypted Paks" Command="{Binding MenuCommand}" CommandParameter="Directory_ExportDecryptedPaks" IsEnabled="{Binding Status.IsReady}">
+                        <MenuItem.Icon>
+                            <Viewbox Width="16" Height="16">
+                                <Canvas Width="24" Height="24">
+                                    <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.ForegroundBrush}}" Data="{StaticResource BackupIcon}" />
+                                </Canvas>
+                            </Viewbox>
+                        </MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
                 <MenuItem Header="Packages">
                     <MenuItem Header="Search" IsEnabled="{Binding Status.IsReady}" InputGestureText="Ctrl+Shift+F" Click="OnSearchViewClick">
@@ -154,6 +163,17 @@
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="Settings" Command="{Binding MenuCommand}" CommandParameter="Settings" />
+                <MenuItem Header="Diff Checker" Command="{Binding MenuCommand}" CommandParameter="Directory_DiffProfiles"
+                          IsEnabled="{Binding Status.IsReady}"
+                          ToolTip="Compare two profiles or pak folders, extract new/modified packages, and log removed files">
+                    <MenuItem.Icon>
+                        <Viewbox Width="16" Height="16">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.AccentForegroundBrush}}" Data="{StaticResource BackupIcon}" />
+                            </Canvas>
+                        </Viewbox>
+                    </MenuItem.Icon>
+                </MenuItem>
                 <MenuItem Command="{Binding MenuCommand}" CommandParameter="ExportQueue">
                     <MenuItem.Header>
                         <TextBlock>
@@ -188,7 +208,10 @@
                     <ComboBox MinWidth="200" Margin="4"
                               ItemsSource="{Binding ProfilesView.ProfileNames}"
                               SelectedItem="{Binding ProfilesView.SelectedProfile, Mode=TwoWay}"
-                              adonisExtensions:WatermarkExtension.Watermark="No profiles saved yet" />
+                              adonisExtensions:WatermarkExtension.Watermark="No profiles saved yet"
+                              ToolTip="Select a profile to preview. Use Load Selected Profile to apply it." />
+                    <MenuItem Header="Load Selected Profile" Click="OnLoadSelectedProfile"
+                              IsEnabled="{Binding ProfilesView.CanLoad}" />
                     <Separator />
                     <MenuItem Header="Save Current Settings as New Profile..." Click="OnSaveCurrentSettingsAsProfile">
                         <MenuItem.Icon>

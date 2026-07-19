@@ -1,0 +1,263 @@
+<adonisControls:AdonisWindow x:Class="FModel.Views.ProfileDiffView"
+         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+         xmlns:controls="clr-namespace:FModel.Views.Resources.Controls"
+         xmlns:converters="clr-namespace:FModel.Views.Resources.Converters"
+         xmlns:adonisUi="clr-namespace:AdonisUI;assembly=AdonisUI"
+         xmlns:adonisControls="clr-namespace:AdonisUI.Controls;assembly=AdonisUI"
+         xmlns:adonisExtensions="clr-namespace:AdonisUI.Extensions;assembly=AdonisUI"
+         WindowStartupLocation="CenterScreen" ResizeMode="NoResize" IconVisibility="Collapsed"
+         SizeToContent="Height"
+         MinHeight="420"
+         Width="{Binding Source={x:Static SystemParameters.MaximizedPrimaryScreenWidth}, Converter={converters:RatioConverter}, ConverterParameter='0.42'}">
+    <adonisControls:AdonisWindow.Style>
+        <Style TargetType="adonisControls:AdonisWindow" BasedOn="{StaticResource {x:Type adonisControls:AdonisWindow}}" >
+            <Setter Property="Title" Value="Diff Checker" />
+        </Style>
+    </adonisControls:AdonisWindow.Style>
+    <Grid Margin="10" adonisExtensions:LayerExtension.Layer="2" Background="Transparent">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="8" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      MaxHeight="{Binding Source={x:Static SystemParameters.MaximizedPrimaryScreenHeight}, Converter={converters:RatioConverter}, ConverterParameter='0.7'}">
+            <StackPanel>
+                <TextBlock TextWrapping="Wrap" Margin="0 0 0 10"
+                           Text="Compare two pak inventories (path + size + encrypted). Extracts new/modified packages, optionally writes a diff log into the export root, and can export textures/models/audio. Same-size content changes are not detected." />
+
+                <CheckBox Content="Manual mount (pak / AES / mapping / engine)"
+                          IsChecked="{Binding UseManualMount, Mode=TwoWay}" Margin="0 0 0 10"
+                          Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}"
+                          ToolTip="Off: use saved profiles. On: pick pak folders and crypto/engine yourself." />
+
+                <!-- Profile mode -->
+                <Grid Margin="0 0 0 8" Visibility="{Binding UseProfiles, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Old Profile" VerticalAlignment="Center" />
+                    <ComboBox Grid.Row="0" Grid.Column="2"
+                              ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding OldProfile, Mode=TwoWay}" />
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="New Profile" VerticalAlignment="Center" />
+                    <ComboBox Grid.Row="2" Grid.Column="2"
+                              ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding NewProfile, Mode=TwoWay}" />
+                </Grid>
+
+                <!-- Manual mode -->
+                <StackPanel Visibility="{Binding UseManualMount, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="Optional: pick a profile to fill the fields below" FontStyle="Italic" Margin="0 0 0 6" Opacity="0.8" />
+                    <Grid Margin="0 0 0 10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Fill Old" VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="2" ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding OldProfile, Mode=TwoWay}" />
+                        <TextBlock Grid.Column="4" Text="Fill New" VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="6" ItemsSource="{Binding ProfileNames}" SelectedItem="{Binding NewProfile, Mode=TwoWay}" />
+                    </Grid>
+
+                    <Separator Style="{StaticResource CustomSeparator}" Tag="PAK FOLDERS" Margin="0 0 0 8" />
+
+                    <Grid Margin="0 0 0 8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" MinWidth="90" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="5" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Old Pak Folder" VerticalAlignment="Center" />
+                        <TextBox Grid.Row="0" Grid.Column="2" Text="{Binding OldPakFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button Grid.Row="0" Grid.Column="4" Content="..." MinWidth="32" Click="OnBrowseOldPak" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="New Pak Folder" VerticalAlignment="Center" />
+                        <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding NewPakFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button Grid.Row="2" Grid.Column="4" Content="..." MinWidth="32" Click="OnBrowseNewPak" />
+                    </Grid>
+
+                    <CheckBox Content="Share AES, mapping, and engine between Old and New"
+                              IsChecked="{Binding ShareCryptoAndEngine, Mode=TwoWay}" Margin="0 4 0 8"
+                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}"
+                              ToolTip="On: one AES key, mapping file, and UE version for both sides. Pak folders stay separate." />
+
+                    <!-- Shared crypto/engine -->
+                    <Grid Margin="0 0 0 8" Visibility="{Binding ShareCryptoAndEngine, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" MinWidth="90" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="5" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="AES Key" VerticalAlignment="Center" />
+                        <TextBox Grid.Row="0" Grid.Column="2" Grid.ColumnSpan="3"
+                                 Text="{Binding SharedAesKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Mapping File" VerticalAlignment="Center" />
+                        <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding SharedMappingPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button Grid.Row="2" Grid.Column="4" Content="..." MinWidth="32" Click="OnBrowseSharedMapping" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="UE Version" VerticalAlignment="Center" />
+                        <controls:FilterableComboBox Grid.Row="4" Grid.Column="2" Grid.ColumnSpan="3"
+                                                     ItemsSource="{Binding UeGames}"
+                                                     Style="{StaticResource UComboBox}"
+                                                     SelectedItem="{Binding SharedUeVersion, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </controls:FilterableComboBox>
+                    </Grid>
+
+                    <!-- Per-side crypto/engine -->
+                    <Grid Margin="0 0 0 8" Visibility="{Binding ShowPerSideCrypto, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Old" FontWeight="SemiBold" Margin="0 0 0 6" />
+                            <TextBlock Text="AES Key" Margin="0 0 0 2" />
+                            <TextBox Text="{Binding OldAesKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0 0 0 6" />
+                            <TextBlock Text="Mapping File" Margin="0 0 0 2" />
+                            <Grid Margin="0 0 0 6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="5" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0" Text="{Binding OldMappingPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button Grid.Column="2" Content="..." MinWidth="32" Click="OnBrowseOldMapping" />
+                            </Grid>
+                            <TextBlock Text="UE Version" Margin="0 0 0 2" />
+                            <controls:FilterableComboBox ItemsSource="{Binding UeGames}" Style="{StaticResource UComboBox}"
+                                                         SelectedItem="{Binding OldUeVersion, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </controls:FilterableComboBox>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="New" FontWeight="SemiBold" Margin="0 0 0 6" />
+                            <TextBlock Text="AES Key" Margin="0 0 0 2" />
+                            <TextBox Text="{Binding NewAesKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0 0 0 6" />
+                            <TextBlock Text="Mapping File" Margin="0 0 0 2" />
+                            <Grid Margin="0 0 0 6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="5" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0" Text="{Binding NewMappingPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button Grid.Column="2" Content="..." MinWidth="32" Click="OnBrowseNewMapping" />
+                            </Grid>
+                            <TextBlock Text="UE Version" Margin="0 0 0 2" />
+                            <controls:FilterableComboBox ItemsSource="{Binding UeGames}" Style="{StaticResource UComboBox}"
+                                                         SelectedItem="{Binding NewUeVersion, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </controls:FilterableComboBox>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+
+                <Separator Style="{StaticResource CustomSeparator}" Tag="OUTPUT" Margin="0 4 0 8" />
+
+                <Grid Margin="0 0 0 8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" MinWidth="90" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="5" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Export Root" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="2" Text="{Binding ExportRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <Button Grid.Column="4" Content="..." MinWidth="32" Click="OnBrowseExportRoot" />
+                </Grid>
+
+                <CheckBox Content="Write Diff Log File" IsChecked="{Binding WriteDiffLogFile, Mode=TwoWay}" Margin="0 0 0 4"
+                          Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}"
+                          ToolTip="Writes added/modified/removed paths into a text file in the export root. Modified lines include size deltas." />
+                <CheckBox Content="Export Properties (.json)" IsChecked="{Binding ExportProperties, Mode=TwoWay}" Margin="0 0 0 4"
+                          Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                <CheckBox Content="Export Raw Data" IsChecked="{Binding ExportRaw, Mode=TwoWay}" Margin="0 0 0 4"
+                          Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                <CheckBox Content="Export Textures" IsChecked="{Binding ExportTextures, Mode=TwoWay}" Margin="0 0 0 4"
+                          Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                <CheckBox Content="Export Models" IsChecked="{Binding ExportModels, Mode=TwoWay}" Margin="0 0 0 4"
+                          Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                <CheckBox Content="Export Audio" IsChecked="{Binding ExportAudio, Mode=TwoWay}" Margin="0 0 0 4"
+                          Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                <CheckBox Content="Export Removed Files" IsChecked="{Binding ExportRemoved, Mode=TwoWay}" Margin="0 0 0 4"
+                          Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}"
+                          ToolTip="Exports packages that exist only on the Old side into ExportRoot/Removed/ (uses the export format toggles above; defaults to properties if none are on)." />
+                <CheckBox Content="Populate Explorer with Delta" IsChecked="{Binding PopulateExplorer, Mode=TwoWay}" Margin="0 0 0 4"
+                          Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="1" Margin="0 8 0 0">
+            <ProgressBar Height="14" Minimum="0" Maximum="100" Value="{Binding ProgressPercent}" />
+            <TextBlock Text="{Binding ProgressReportText}" TextWrapping="Wrap" FontStyle="Italic" Margin="0 6 0 0" />
+            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Opacity="0.85" Margin="0 4 0 0" />
+        </StackPanel>
+
+        <Grid Grid.Row="3">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="1" MinWidth="120" Margin="0 0 8 0" Content="{Binding RunButtonText}"
+                    Style="{DynamicResource {x:Static adonisUi:Styles.AccentButton}}"
+                    IsEnabled="{Binding CanRun}" Click="OnRunClick" />
+            <Button Grid.Column="2" MinWidth="100" Margin="0 0 8 0" Content="Stop Diff"
+                    IsEnabled="{Binding CanStop}" Click="OnStopClick" />
+            <Button Grid.Column="3" MinWidth="78" Content="Close" IsCancel="True" Click="OnCloseClick" />
+        </Grid>
+    </Grid>
+</adonisControls:AdonisWindow>

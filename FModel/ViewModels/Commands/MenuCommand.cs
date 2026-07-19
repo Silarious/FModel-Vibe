@@ -1,7 +1,12 @@
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using AdonisUI.Controls;
+using CUE4Parse.GameTypes.ArcRaiders.Encryption.Theia;
+using CUE4Parse.UE4.Versions;
 using FModel.Extensions;
 using FModel.Framework;
 using FModel.Services;
@@ -9,6 +14,10 @@ using FModel.Settings;
 using FModel.Views;
 using FModel.Views.Resources.Controls;
 using Newtonsoft.Json;
+using Ookii.Dialogs.Wpf;
+using MessageBox = AdonisUI.Controls.MessageBox;
+using MessageBoxButton = AdonisUI.Controls.MessageBoxButton;
+using MessageBoxImage = AdonisUI.Controls.MessageBoxImage;
 
 namespace FModel.ViewModels.Commands;
 
@@ -31,11 +40,17 @@ public class MenuCommand : ViewModelCommand<ApplicationViewModel>
             case "Directory_Backup":
                 Helper.OpenWindow<AdonisWindow>("Backup Manager", () => new BackupManager(contextViewModel.CUE4Parse.Provider.ProjectName).Show());
                 break;
+            case "Directory_DiffProfiles":
+                Helper.OpenWindow<AdonisWindow>("Diff Checker", () => new ProfileDiffView().Show());
+                break;
             case "Directory_ArchivesInfo":
                 ApplicationService.ApplicationView.IsAssetsExplorerVisible = false;
                 contextViewModel.CUE4Parse.TabControl.AddTab("Archives Info");
                 contextViewModel.CUE4Parse.TabControl.SelectedTab.Highlighter = AvalonExtensions.HighlighterSelector("json");
                 contextViewModel.CUE4Parse.TabControl.SelectedTab.SetDocumentText(JsonConvert.SerializeObject(contextViewModel.CUE4Parse.GameDirectory.DirectoryFiles, Formatting.Indented), false, false);
+                break;
+            case "Directory_ExportDecryptedPaks":
+                await ExportDecryptedPaksAsync(contextViewModel);
                 break;
             case "Views_3dViewer":
                 contextViewModel.CUE4Parse.SnooperViewer.Run();
@@ -90,6 +105,56 @@ public class MenuCommand : ViewModelCommand<ApplicationViewModel>
                 selectedFolder.IsSelected = true;
                 break;
         }
+    }
+
+    private static async Task ExportDecryptedPaksAsync(ApplicationViewModel contextViewModel)
+    {
+        if (contextViewModel.CUE4Parse.Provider.Versions.Game is not EGame.GAME_ArcRaiders)
+        {
+            MessageBox.Show(
+                "Export Decrypted Paks is only available when the UE version is set to Arc Raiders.",
+                "Export Decrypted Paks",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        var sourceDir = UserSettings.Default.GameDirectory;
+        if (string.IsNullOrWhiteSpace(sourceDir) || !Directory.Exists(sourceDir))
+        {
+            MessageBox.Show("No valid game directory is selected.", "Export Decrypted Paks", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var folderBrowser = new VistaFolderBrowserDialog
+        {
+            Description = "Choose a folder for decrypted .pak / .ucas (+ .utoc)",
+            UseDescriptionForTitle = true,
+            ShowNewFolderButton = true
+        };
+        if (folderBrowser.ShowDialog() != true)
+            return;
+
+        var destDir = folderBrowser.SelectedPath;
+        await ApplicationService.ThreadWorkerView.Begin(cancellationToken =>
+        {
+            var progress = new Progress<(int Done, int Total, string Name)>(p =>
+            {
+                ApplicationService.ApplicationView.Status.UpdateStatusLabel(
+                    $"Theia decrypt {p.Done}/{p.Total}: {p.Name}", "Export");
+            });
+
+            var (decrypted, utocs, skipped) = TheiaPakDecryptor.DecryptDirectory(
+                sourceDir, destDir, progress, cancellationToken);
+
+            FLogger.Append(ELog.Information, () =>
+                FLogger.Text(
+                    $"Exported decrypted packs → {destDir} (decrypted {decrypted}, utoc {utocs}, skipped {skipped})",
+                    Constants.WHITE,
+                    true));
+            ApplicationService.ApplicationView.Status.UpdateStatusLabel(
+                $"Exported {decrypted} file(s) (+{utocs} utoc, {skipped} skipped)", "Theia");
+        });
     }
 
     private void SetFoldersIsExpanded(AssetsFolderViewModel root, bool expand, CancellationToken cancellationToken)

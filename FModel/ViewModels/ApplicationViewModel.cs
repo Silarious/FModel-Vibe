@@ -142,8 +142,16 @@ public class ApplicationViewModel : ViewModel
     public DirectorySettings AvoidEmptyGameDirectory(bool bAlreadyLaunched)
     {
         var gameDirectory = UserSettings.Default.GameDirectory;
-        if (!bAlreadyLaunched && UserSettings.Default.PerDirectory.TryGetValue(gameDirectory, out var currentDir))
-            return currentDir;
+        if (!bAlreadyLaunched && !string.IsNullOrWhiteSpace(gameDirectory))
+        {
+            if (ProfileManager.TryGetPerDirectory(gameDirectory, out var currentDir))
+            {
+                // Ensure key + property stay aligned for the next save/restart.
+                ProfileManager.SetPerDirectory(gameDirectory, currentDir);
+                UserSettings.Default.GameDirectory = currentDir.GameDirectory;
+                return currentDir;
+            }
+        }
 
         Status.SetStatus(EStatusKind.Configuring);
         var gameLauncherViewModel = new GameSelectorViewModel(gameDirectory);
@@ -252,7 +260,17 @@ public class ApplicationViewModel : ViewModel
             CUE4Parse.LoadVfs(aes);
             AesManager.SetAesKeys();
         });
+        AesManager.HasChange = false;
         RaisePropertyChanged(nameof(GameDisplayName));
+    }
+
+    /// <summary>
+    /// Apply AES from settings (e.g. Profiles tab) and remount archives when the key changed.
+    /// </summary>
+    public async Task RemountIfAesSettingsChangedAsync()
+    {
+        if (!AesManager.SyncMainKeyFromSettings()) return;
+        await UpdateProvider(false);
     }
 
     public static async Task InitVgmStream()
