@@ -32,7 +32,6 @@ public class LoadCommand : ViewModelCommand<LoadingModesViewModel>
 
     private ThreadWorkerViewModel _threadWorkerView => ApplicationService.ThreadWorkerView;
     private ApplicationViewModel _applicationView => ApplicationService.ApplicationView;
-    private DiscordHandler _discordHandler => DiscordService.DiscordHandler;
 
     public LoadCommand(LoadingModesViewModel contextViewModel) : base(contextViewModel) { }
 
@@ -99,8 +98,6 @@ public class LoadCommand : ViewModelCommand<LoadingModesViewModel>
                     }
                     default: throw new ArgumentOutOfRangeException();
                 }
-
-                _discordHandler.UpdatePresence(_applicationView.CUE4Parse);
             })
         ).ConfigureAwait(false);
 #if DEBUG

@@ -14,6 +14,7 @@ public partial class ProfileDiffView
         DataContext = _viewModel = new ProfileDiffViewModel();
         InitializeComponent();
         Loaded += (_, _) => _viewModel.RefreshProfiles();
+        Closing += (_, _) => _viewModel.PersistSettings();
     }
 
     private async void OnRunClick(object sender, RoutedEventArgs e)

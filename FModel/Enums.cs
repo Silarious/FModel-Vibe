@@ -45,14 +45,6 @@ public enum EAesReload
     OncePerDay
 }
 
-public enum EDiscordRpc
-{
-    [Description("Always")]
-    Always,
-    [Description("Never")]
-    Never
-}
-
 public enum ELoadingMode
 {
     [Description("Multiple")]

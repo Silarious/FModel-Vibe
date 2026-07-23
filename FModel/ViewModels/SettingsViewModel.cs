@@ -13,7 +13,6 @@ using CUE4Parse_Conversion.UEFormat.Enums;
 using FModel.Extensions;
 using FModel.Extensions.Themes;
 using FModel.Framework;
-using FModel.Services;
 using FModel.Settings;
 using ICSharpCode.AvalonEdit.Highlighting;
 
@@ -21,8 +20,6 @@ namespace FModel.ViewModels;
 
 public class SettingsViewModel : ViewModel
 {
-    private readonly DiscordHandler _discordHandler = DiscordService.DiscordHandler;
-
     private bool _useCustomOutputFolders;
     public bool UseCustomOutputFolders
     {
@@ -91,13 +88,6 @@ public class SettingsViewModel : ViewModel
     {
         get => _selectedAesReload;
         set => SetProperty(ref _selectedAesReload, value);
-    }
-
-    private EDiscordRpc _selectedDiscordRpc;
-    public EDiscordRpc SelectedDiscordRpc
-    {
-        get => _selectedDiscordRpc;
-        set => SetProperty(ref _selectedDiscordRpc, value);
     }
 
     private ECompressedAudio _selectedCompressedAudio;
@@ -202,7 +192,6 @@ public class SettingsViewModel : ViewModel
     public ReadOnlyObservableCollection<EGame> UeGames { get; private set; }
     public ReadOnlyObservableCollection<ELanguage> AssetLanguages { get; private set; }
     public ReadOnlyObservableCollection<EAesReload> AesReloads { get; private set; }
-    public ReadOnlyObservableCollection<EDiscordRpc> DiscordRpcs { get; private set; }
     public ReadOnlyObservableCollection<ECompressedAudio> CompressedAudios { get; private set; }
     public ReadOnlyObservableCollection<EIconStyle> CosmeticStyles { get; private set; }
     public ReadOnlyObservableCollection<EMetadataExport> MetadataExportModes { get; private set; }
@@ -309,12 +298,10 @@ public class SettingsViewModel : ViewModel
         UnluacOpcodeMap = _unluacOpcodeMap;
         SelectedJsonHighlightTheme = _jsonHighlightThemeSnapshot;
         SelectedAesReload = UserSettings.Default.AesReload;
-        SelectedDiscordRpc = UserSettings.Default.DiscordRpc;
 
         UeGames = new ReadOnlyObservableCollection<EGame>(new ObservableCollection<EGame>(EnumerateUeGames()));
         AssetLanguages = new ReadOnlyObservableCollection<ELanguage>(new ObservableCollection<ELanguage>(EnumerateAssetLanguages()));
         AesReloads = new ReadOnlyObservableCollection<EAesReload>(new ObservableCollection<EAesReload>(EnumerateAesReloads()));
-        DiscordRpcs = new ReadOnlyObservableCollection<EDiscordRpc>(new ObservableCollection<EDiscordRpc>(EnumerateDiscordRpcs()));
         CompressedAudios = new ReadOnlyObservableCollection<ECompressedAudio>(new ObservableCollection<ECompressedAudio>(EnumerateCompressedAudios()));
         CosmeticStyles = new ReadOnlyObservableCollection<EIconStyle>(new ObservableCollection<EIconStyle>(EnumerateCosmeticStyles()));
         MetadataExportModes = new ReadOnlyObservableCollection<EMetadataExport>(new ObservableCollection<EMetadataExport>(EnumerateMetadataExportModes()));
@@ -383,11 +370,7 @@ public class SettingsViewModel : ViewModel
         UserSettings.Default.MaterialExportFormat = SelectedMaterialExportFormat;
         UserSettings.Default.TextureExportFormat = SelectedTextureExportFormat;
         UserSettings.Default.AesReload = SelectedAesReload;
-        UserSettings.Default.DiscordRpc = SelectedDiscordRpc;
         UserSettings.Default.JsonHighlightTheme = SelectedJsonHighlightTheme;
-
-        if (SelectedDiscordRpc == EDiscordRpc.Never)
-            _discordHandler.Shutdown();
 
         return restart;
     }
@@ -399,7 +382,6 @@ public class SettingsViewModel : ViewModel
             .OrderBy(value => ((int)value & 0xFF) == 0);
     private IEnumerable<ELanguage> EnumerateAssetLanguages() => Enum.GetValues<ELanguage>();
     private IEnumerable<EAesReload> EnumerateAesReloads() => Enum.GetValues<EAesReload>();
-    private IEnumerable<EDiscordRpc> EnumerateDiscordRpcs() => Enum.GetValues<EDiscordRpc>();
     private IEnumerable<ECompressedAudio> EnumerateCompressedAudios() => Enum.GetValues<ECompressedAudio>();
     private IEnumerable<EIconStyle> EnumerateCosmeticStyles() => Enum.GetValues<EIconStyle>();
     private IEnumerable<EMetadataExport> EnumerateMetadataExportModes() => Enum.GetValues<EMetadataExport>();

@@ -2,6 +2,7 @@ using AdonisUI.Controls;
 using Microsoft.Win32;
 using Serilog;
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -133,9 +134,27 @@ public partial class App
 
     private void AppExit(object sender, ExitEventArgs e)
     {
-        Log.Information("––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––");
-        Log.CloseAndFlush();
-        UserSettings.Save();
+        try
+        {
+            Log.Information("––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––");
+            Log.CloseAndFlush();
+        }
+        catch
+        {
+            // ignored
+        }
+
+        try
+        {
+            UserSettings.Save();
+        }
+        catch
+        {
+            // ignored — never block process exit on settings I/O
+        }
+
+        // Orphaned IoStore mount threads can keep the process alive after the
+        // main window is gone (zombie in Task Manager). Force-terminate.
         Environment.Exit(0);
     }
 
@@ -143,30 +162,76 @@ public partial class App
     {
         Log.Error("{Exception}", e.Exception);
 
-        var messageBox = new MessageBoxModel
-        {
-            Text = $"An unhandled {e.Exception.GetBaseException().GetType()} occurred: {e.Exception.Message}",
-            Caption = "Fatal Error",
-            Icon = MessageBoxImage.Error,
-            Buttons =
-            [
-                MessageBoxButtons.Custom("Reset Settings", EErrorKind.ResetSettings),
-                MessageBoxButtons.Custom("Restart", EErrorKind.Restart),
-                MessageBoxButtons.Custom("OK", EErrorKind.Ignore)
-            ],
-            IsSoundEnabled = false
-        };
+        var startupFailed = Application.Current?.MainWindow == null;
 
-        MessageBox.Show(messageBox);
-        if (messageBox.Result == MessageBoxResult.Custom && (EErrorKind) messageBox.ButtonPressed.Id != EErrorKind.Ignore)
+        try
         {
-            if ((EErrorKind) messageBox.ButtonPressed.Id == EErrorKind.ResetSettings)
-                UserSettings.Delete();
+            var messageBox = new MessageBoxModel
+            {
+                Text = $"An unhandled {e.Exception.GetBaseException().GetType()} occurred: {e.Exception.Message}",
+                Caption = "Fatal Error",
+                Icon = MessageBoxImage.Error,
+                Buttons =
+                [
+                    MessageBoxButtons.Custom("Reset Settings", EErrorKind.ResetSettings),
+                    MessageBoxButtons.Custom("Restart", EErrorKind.Restart),
+                    MessageBoxButtons.Custom("OK", EErrorKind.Ignore)
+                ],
+                IsSoundEnabled = false
+            };
 
-            ApplicationService.ApplicationView.Restart();
+            MessageBox.Show(messageBox);
+            if (messageBox.Result == MessageBoxResult.Custom &&
+                (EErrorKind) messageBox.ButtonPressed.Id != EErrorKind.Ignore)
+            {
+                if ((EErrorKind) messageBox.ButtonPressed.Id == EErrorKind.ResetSettings)
+                    UserSettings.Delete();
+
+                TryRestartProcess();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed showing fatal error dialog");
         }
 
         e.Handled = true;
+
+        // MainWindow never opened (e.g. XamlParse / ApplicationService type-init failure).
+        // Leaving Handled=true with no window produces a zombie process in Task Manager.
+        if (startupFailed)
+            Environment.Exit(1);
+    }
+
+    private static void TryRestartProcess()
+    {
+        try
+        {
+            var path = Path.GetFullPath(Environment.GetCommandLineArgs()[0]);
+            if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = $"\"{path}\"",
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = path,
+                    UseShellExecute = true
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to restart after fatal error");
+        }
+
+        Environment.Exit(0);
     }
 
     private string GetOperatingSystemProductName()

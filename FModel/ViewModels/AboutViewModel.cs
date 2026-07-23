@@ -51,7 +51,7 @@ public class AboutViewModel : ViewModel
                 DescriptionLabel = "FModel is an archive explorer for Unreal Engine games that uses CUE4Parse as its core parsing library, providing robust support for the latest UE4 and UE5 archive formats. It aims to deliver a modern and intuitive user interface, powerful features, and a comprehensive set of tools for previewing and converting game packages, empowering YOU to understand games' inner workings with ease.";
                 ContributorsLabel = $"FModel owes its continued existence to the passionate individuals who have generously contributed their time and expertise. Contributions from individuals such as {string.Join(", ", "GMatrixGames", "amr", "LongerWarrior", "MinshuG", "InTheShade", "Officer")}, and countless others, both in the past and those yet to come, ensure the continuous development and success of this project. If you are benefiting from FModel and would like to support its continued improvements, please consider making a donation.";
                 ReferencesLabel = string.Join(", ",
-                    "Adonis UI", "AutoUpdater.NET", "AvalonEdit", "CSCore", "CUE4Parse", "DiscordRichPresence",
+                    "Adonis UI", "AutoUpdater.NET", "AvalonEdit", "CSCore", "CUE4Parse",
                     "EpicManifestParser", "ImGui.NET", "K4os.Compression.LZ4", "Newtonsoft.Json", "NVorbis", "Oodle.NET",
                     "Ookii.Dialogs.Wpf", "OpenTK", "RestSharp", "Serilog", "SixLabors.ImageSharp", "SkiaSharp");
             }),

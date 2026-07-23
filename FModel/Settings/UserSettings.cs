@@ -291,13 +291,6 @@ namespace FModel.Settings
             set => SetProperty(ref _aesReload, value);
         }
 
-        private EDiscordRpc _discordRpc = EDiscordRpc.Always;
-        public EDiscordRpc DiscordRpc
-        {
-            get => _discordRpc;
-            set => SetProperty(ref _discordRpc, value);
-        }
-
         private ELanguage _assetLanguage = ELanguage.English;
         public ELanguage AssetLanguage
         {
@@ -648,5 +641,41 @@ namespace FModel.Settings
             get => _previewTexturesAssetExplorer;
             set => SetProperty(ref _previewTexturesAssetExplorer, value);
         }
+
+        private DiffCheckerSettings _diffChecker = new();
+        public DiffCheckerSettings DiffChecker
+        {
+            get => _diffChecker ??= new DiffCheckerSettings();
+            set => SetProperty(ref _diffChecker, value ?? new DiffCheckerSettings());
+        }
+    }
+
+    /// <summary>Persisted Diff Checker window options (AppSettings.json).</summary>
+    public sealed class DiffCheckerSettings
+    {
+        public bool UseManualMount { get; set; }
+        public bool ShareCryptoAndEngine { get; set; } = true;
+        public string OldProfile { get; set; }
+        public string NewProfile { get; set; }
+        public string OldPakFolder { get; set; } = "";
+        public string NewPakFolder { get; set; } = "";
+        public string SharedAesKey { get; set; } = "";
+        public string SharedMappingPath { get; set; } = "";
+        public EGame SharedUeVersion { get; set; } = EGame.GAME_UE4_LATEST;
+        public string OldAesKey { get; set; } = "";
+        public string OldMappingPath { get; set; } = "";
+        public EGame OldUeVersion { get; set; } = EGame.GAME_UE4_LATEST;
+        public string NewAesKey { get; set; } = "";
+        public string NewMappingPath { get; set; } = "";
+        public EGame NewUeVersion { get; set; } = EGame.GAME_UE4_LATEST;
+        public string ExportRoot { get; set; } = "";
+        public bool ExportProperties { get; set; } = true;
+        public bool ExportRaw { get; set; }
+        public bool ExportTextures { get; set; }
+        public bool ExportModels { get; set; }
+        public bool ExportAudio { get; set; }
+        public bool ExportRemoved { get; set; }
+        public bool PopulateExplorer { get; set; } = true;
+        public bool WriteDiffLogFile { get; set; } = true;
     }
 }

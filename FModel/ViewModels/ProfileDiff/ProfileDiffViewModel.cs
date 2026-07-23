@@ -354,6 +354,8 @@ public class ProfileDiffViewModel : ViewModel
                      .OrderBy(value => ((int)value & 0xFF) == 0))
             UeGames.Add(game);
 
+        LoadFromSettings();
+
         OldProfile ??= ProfileNames.FirstOrDefault();
         NewProfile ??= UserSettings.Default.CurrentProfileName
                        ?? ProfileNames.FirstOrDefault(n => !string.Equals(n, OldProfile, StringComparison.OrdinalIgnoreCase))
@@ -363,6 +365,67 @@ public class ProfileDiffViewModel : ViewModel
 
         if (string.IsNullOrWhiteSpace(ExportRoot))
             ExportRoot = Path.Combine(UserSettings.Default.OutputDirectory, "Exports");
+    }
+
+    public void PersistSettings()
+    {
+        var s = UserSettings.Default.DiffChecker;
+        s.UseManualMount = UseManualMount;
+        s.ShareCryptoAndEngine = ShareCryptoAndEngine;
+        s.OldProfile = OldProfile;
+        s.NewProfile = NewProfile;
+        s.OldPakFolder = OldPakFolder;
+        s.NewPakFolder = NewPakFolder;
+        s.SharedAesKey = SharedAesKey;
+        s.SharedMappingPath = SharedMappingPath;
+        s.SharedUeVersion = SharedUeVersion;
+        s.OldAesKey = OldAesKey;
+        s.OldMappingPath = OldMappingPath;
+        s.OldUeVersion = OldUeVersion;
+        s.NewAesKey = NewAesKey;
+        s.NewMappingPath = NewMappingPath;
+        s.NewUeVersion = NewUeVersion;
+        s.ExportRoot = ExportRoot;
+        s.ExportProperties = ExportProperties;
+        s.ExportRaw = ExportRaw;
+        s.ExportTextures = ExportTextures;
+        s.ExportModels = ExportModels;
+        s.ExportAudio = ExportAudio;
+        s.ExportRemoved = ExportRemoved;
+        s.PopulateExplorer = PopulateExplorer;
+        s.WriteDiffLogFile = WriteDiffLogFile;
+        UserSettings.Save();
+    }
+
+    private void LoadFromSettings()
+    {
+        var s = UserSettings.Default.DiffChecker;
+        if (s == null) return;
+
+        UseManualMount = s.UseManualMount;
+        ShareCryptoAndEngine = s.ShareCryptoAndEngine;
+        if (!string.IsNullOrWhiteSpace(s.OldProfile)) OldProfile = s.OldProfile;
+        if (!string.IsNullOrWhiteSpace(s.NewProfile)) NewProfile = s.NewProfile;
+        if (!string.IsNullOrWhiteSpace(s.OldPakFolder)) OldPakFolder = s.OldPakFolder;
+        if (!string.IsNullOrWhiteSpace(s.NewPakFolder)) NewPakFolder = s.NewPakFolder;
+        if (!string.IsNullOrWhiteSpace(s.SharedAesKey)) SharedAesKey = s.SharedAesKey;
+        if (!string.IsNullOrWhiteSpace(s.SharedMappingPath)) SharedMappingPath = s.SharedMappingPath;
+        SharedUeVersion = s.SharedUeVersion;
+        if (!string.IsNullOrWhiteSpace(s.OldAesKey)) OldAesKey = s.OldAesKey;
+        if (!string.IsNullOrWhiteSpace(s.OldMappingPath)) OldMappingPath = s.OldMappingPath;
+        OldUeVersion = s.OldUeVersion;
+        if (!string.IsNullOrWhiteSpace(s.NewAesKey)) NewAesKey = s.NewAesKey;
+        if (!string.IsNullOrWhiteSpace(s.NewMappingPath)) NewMappingPath = s.NewMappingPath;
+        NewUeVersion = s.NewUeVersion;
+        if (!string.IsNullOrWhiteSpace(s.ExportRoot)) ExportRoot = s.ExportRoot;
+        ExportProperties = s.ExportProperties;
+        ExportRaw = s.ExportRaw;
+        ExportTextures = s.ExportTextures;
+        ExportModels = s.ExportModels;
+        ExportAudio = s.ExportAudio;
+        ExportRemoved = s.ExportRemoved;
+        PopulateExplorer = s.PopulateExplorer;
+        WriteDiffLogFile = s.WriteDiffLogFile;
     }
 
     private void PrefillManualFromLive()
@@ -375,15 +438,15 @@ public class ProfileDiffViewModel : ViewModel
         if (string.IsNullOrWhiteSpace(SharedMappingPath) &&
             live.CurrentDir?.Endpoints is { Length: > 1 } endpoints)
             SharedMappingPath = endpoints[1].FilePath ?? "";
-        if (live.CurrentDir != null)
+        if (live.CurrentDir != null && SharedUeVersion == EGame.GAME_UE4_LATEST)
             SharedUeVersion = live.CurrentDir.UeVersion;
 
-        OldAesKey = SharedAesKey;
-        NewAesKey = SharedAesKey;
-        OldMappingPath = SharedMappingPath;
-        NewMappingPath = SharedMappingPath;
-        OldUeVersion = SharedUeVersion;
-        NewUeVersion = SharedUeVersion;
+        if (string.IsNullOrWhiteSpace(OldAesKey)) OldAesKey = SharedAesKey;
+        if (string.IsNullOrWhiteSpace(NewAesKey)) NewAesKey = SharedAesKey;
+        if (string.IsNullOrWhiteSpace(OldMappingPath)) OldMappingPath = SharedMappingPath;
+        if (string.IsNullOrWhiteSpace(NewMappingPath)) NewMappingPath = SharedMappingPath;
+        if (OldUeVersion == EGame.GAME_UE4_LATEST) OldUeVersion = SharedUeVersion;
+        if (NewUeVersion == EGame.GAME_UE4_LATEST) NewUeVersion = SharedUeVersion;
     }
 
     private void ApplyProfileToManual(string profileName, bool isOld)
@@ -540,6 +603,8 @@ public class ProfileDiffViewModel : ViewModel
 
         if (!TryResolveConfigs(out var oldConfig, out var newConfig, out var oldLabel, out var newLabel))
             return;
+
+        PersistSettings();
 
         ResetProgress("Starting");
         IsRunning = true;

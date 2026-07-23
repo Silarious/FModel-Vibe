@@ -65,32 +65,32 @@ public class DirectorySettings : ViewModel, ICloneable
         set => SetProperty(ref _texturePlatform, value);
     }
 
-    private VersioningSettings _versioning;
+    private VersioningSettings _versioning = new();
     public VersioningSettings Versioning
     {
-        get => _versioning;
-        set => SetProperty(ref _versioning, value);
+        get => _versioning ??= new VersioningSettings();
+        set => SetProperty(ref _versioning, value ?? new VersioningSettings());
     }
 
     private EndpointSettings[] _endpoints;
     public EndpointSettings[] Endpoints
     {
-        get => _endpoints;
-        set => SetProperty(ref _endpoints, value);
+        get => _endpoints ??= EndpointSettings.Default(GameName ?? "");
+        set => SetProperty(ref _endpoints, value ?? EndpointSettings.Default(GameName ?? ""));
     }
 
     private IList<CustomDirectory> _directories;
     public IList<CustomDirectory> Directories
     {
-        get => _directories;
-        set => SetProperty(ref _directories, value);
+        get => _directories ??= new List<CustomDirectory>();
+        set => SetProperty(ref _directories, value ?? new List<CustomDirectory>());
     }
 
     private AesResponse _aesKeys;
     public AesResponse AesKeys
     {
-        get => _aesKeys;
-        set => SetProperty(ref _aesKeys, value);
+        get => _aesKeys ??= new AesResponse { MainKey = "", DynamicKeys = null };
+        set => SetProperty(ref _aesKeys, value ?? new AesResponse { MainKey = "", DynamicKeys = null });
     }
 
     private DateTime _lastAesReload;
@@ -107,11 +107,11 @@ public class DirectorySettings : ViewModel, ICloneable
         set => SetProperty(ref _criwareDecryptionKey, value);
     }
 
-    private string _unluacOpCodeMap;
+    private string _unluacOpCodeMap = "";
     public string UnluacOpCodeMap
     {
-        get => _unluacOpCodeMap;
-        set => SetProperty(ref _unluacOpCodeMap, value);
+        get => _unluacOpCodeMap ??= "";
+        set => SetProperty(ref _unluacOpCodeMap, value ?? "");
     }
 
     private bool Equals(DirectorySettings other)

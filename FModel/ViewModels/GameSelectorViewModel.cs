@@ -92,7 +92,20 @@ public class GameSelectorViewModel : ViewModel
                 Log.Warning("Selected directory \"{GameDirectory}\" does not end with \"Paks\". Looking in \"{PaksDir}\" instead.", targetGameDir, paksDir);
                 targetGameDir = paksDir;
             }
+        }
 
+        // Arc Raiders before exe sniffing — shipping/bootstrap exes often report UE4 and mis-tag Tencent/CN.
+        var projectDirEarly = Path.Combine(targetGameDir, "..", "..");
+        if (LooksLikeArcRaiders(targetGameDir, projectDirEarly) || LooksLikeArcRaiders(gameDirectory, projectDirEarly))
+        {
+            newGameDirectory = targetGameDir;
+            ueVersion = EGame.GAME_ArcRaiders;
+            Log.Information("Detected Arc Raiders from PioneerGame / path at \"{Dir}\"", targetGameDir);
+            return true;
+        }
+
+        if (!gameDirectory.EndsWith("Paks", StringComparison.OrdinalIgnoreCase))
+        {
             if (Directory.GetFiles(gameDirectory, "*.exe") is { Length: 1 } exe && TryGetUeVersionFromExe(exe[0], out ueVersion))
             {
                 // we checked the exe in the original directory, the BootstrapPackagedGame one
@@ -143,6 +156,19 @@ public class GameSelectorViewModel : ViewModel
 
         ueVersion = EGame.GAME_UE4_LATEST;
         Log.Warning("Failed to detect UE version for \"{GameDirectory}\".", gameDirectory);
+        return false;
+    }
+
+    private static bool LooksLikeArcRaiders(string paksDir, string projectDir)
+    {
+        var projectName = Path.GetFileName(Path.GetFullPath(projectDir));
+        if (projectName.Equals("PioneerGame", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (paksDir.Contains("PioneerGame", StringComparison.OrdinalIgnoreCase) ||
+            paksDir.Contains("ArcRaiders", StringComparison.OrdinalIgnoreCase))
+            return File.Exists(Path.Combine(paksDir, "global.utoc"));
+
         return false;
     }
 

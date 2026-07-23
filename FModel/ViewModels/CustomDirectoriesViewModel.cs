@@ -80,9 +80,13 @@ public class CustomDirectoriesViewModel : ViewModel
         };
         yield return new Separator();
 
-        foreach (var setting in UserSettings.Default.CurrentDir.Directories)
+        var dirs = UserSettings.Default.CurrentDir?.Directories;
+        if (dirs == null) yield break;
+
+        foreach (var setting in dirs)
         {
-            if (setting.DirectoryPath.EndsWith('/'))
+            if (setting == null) continue;
+            if (setting.DirectoryPath?.EndsWith('/') == true)
                 setting.DirectoryPath = setting.DirectoryPath[..^1];
 
             yield return new MenuItem

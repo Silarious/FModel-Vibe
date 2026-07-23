@@ -13,6 +13,7 @@ using FModel.ViewModels;
 using FModel.Views;
 using FModel.Views.Resources.Controls;
 using ICSharpCode.AvalonEdit.Editing;
+using Serilog;
 
 namespace FModel;
 
@@ -24,7 +25,6 @@ public partial class MainWindow
     public static MainWindow YesWeCats;
     private ThreadWorkerViewModel _threadWorkerView => ApplicationService.ThreadWorkerView;
     private ApplicationViewModel _applicationView => ApplicationService.ApplicationView;
-    private DiscordHandler _discordHandler => DiscordService.DiscordHandler;
 
     public MainWindow()
     {
@@ -80,10 +80,24 @@ public partial class MainWindow
 
     private void OnClosing(object sender, CancelEventArgs e)
     {
-        _discordHandler.Dispose();
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await OnLoadedAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "MainWindow load failed");
+            _applicationView.Status.SetStatus(EStatusKind.Failed);
+            FLogger.Append(ELog.Error, () =>
+                FLogger.Text($"Startup failed: {ex.GetBaseException().Message}", Constants.WHITE, true));
+        }
+    }
+
+    private async Task OnLoadedAsync()
     {
         var newOrUpdated = UserSettings.Default.ShowChangelog;
         // Update checks are disabled on this fork (FModel Vibe) - the upstream update server compares
@@ -120,19 +134,8 @@ public partial class MainWindow
             ApplicationViewModel.InitDetex(),
             ApplicationViewModel.InitVgmStream(),
             ApplicationViewModel.InitImGuiSettings(newOrUpdated),
-            Task.Run(() =>
-            {
-                if (UserSettings.Default.DiscordRpc == EDiscordRpc.Always)
-                    _discordHandler.Initialize(_applicationView.GameDisplayName);
-            }),
             UserSettings.Default.DecompileLua ? ApplicationViewModel.InitUnluac() : Task.CompletedTask
-        ).ConfigureAwait(false);
-
-#if DEBUG
-        // await _threadWorkerView.Begin(cancellationToken =>
-        //     _applicationView.CUE4Parse.Extract(cancellationToken,
-        //         _applicationView.CUE4Parse.Provider["Marvel/Content/Marvel/Wwise/Assets/Events/Music/music_new/event/Entry.uasset"]));
-#endif
+        );
     }
 
     private void OnGridSplitterDoubleClick(object sender, MouseButtonEventArgs e)

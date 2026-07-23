@@ -22,6 +22,7 @@ using FModel.Views.Resources.Controls;
 using MessageBox = AdonisUI.Controls.MessageBox;
 using MessageBoxButton = AdonisUI.Controls.MessageBoxButton;
 using MessageBoxImage = AdonisUI.Controls.MessageBoxImage;
+using Serilog;
 
 namespace FModel.ViewModels;
 
@@ -206,38 +207,50 @@ public class ApplicationViewModel : ViewModel
 
     public void Restart()
     {
-        var path = Path.GetFullPath(Environment.GetCommandLineArgs()[0]);
-        if (path.EndsWith(".dll"))
+        try
         {
-            new Process
+            var path = Path.GetFullPath(Environment.GetCommandLineArgs()[0]);
+            if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
             {
-                StartInfo = new ProcessStartInfo
+                Process.Start(new ProcessStartInfo
                 {
                     FileName = "dotnet",
                     Arguments = $"\"{path}\"",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = false,
-                    RedirectStandardError = false,
-                    CreateNoWindow = true
-                }
-            }.Start();
-        }
-        else if (path.EndsWith(".exe"))
-        {
-            new Process
+                    UseShellExecute = true
+                });
+            }
+            else
             {
-                StartInfo = new ProcessStartInfo
+                // UseShellExecute=true so the restarted GUI actually shows a window.
+                // CreateNoWindow + UseShellExecute=false left a headless zombie process.
+                Process.Start(new ProcessStartInfo
                 {
                     FileName = path,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = false,
-                    RedirectStandardError = false,
-                    CreateNoWindow = true
-                }
-            }.Start();
+                    UseShellExecute = true
+                });
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Error(e, "Failed to start replacement FModel process");
         }
 
-        Application.Current.Shutdown();
+        try
+        {
+            Application.Current.Shutdown();
+        }
+        catch
+        {
+            // ignored
+        }
+
+        // Guaranteed exit if WPF shutdown hangs after the window is gone.
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(2500);
+            Environment.Exit(0);
+        });
+        Environment.Exit(0);
     }
 
     public async Task UpdateProvider(bool isLaunch)

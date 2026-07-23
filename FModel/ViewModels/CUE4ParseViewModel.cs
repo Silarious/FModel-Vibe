@@ -169,13 +169,15 @@ public class CUE4ParseViewModel : ViewModel
 
     public CUE4ParseViewModel()
     {
-        var currentDir = UserSettings.Default.CurrentDir;
-        var gameDirectory = currentDir.GameDirectory;
+        var currentDir = UserSettings.Default.CurrentDir
+            ?? throw new InvalidOperationException("CurrentDir is not set");
+        var gameDirectory = currentDir.GameDirectory ?? "";
+        var versioning = currentDir.Versioning ?? new VersioningSettings();
         var versionContainer = new VersionContainer(
             game: currentDir.UeVersion, platform: currentDir.TexturePlatform,
-            customVersions: new FCustomVersionContainer(currentDir.Versioning.CustomVersions),
-            optionOverrides: currentDir.Versioning.Options,
-            mapStructTypesOverrides: currentDir.Versioning.MapStructTypes);
+            customVersions: new FCustomVersionContainer(versioning.CustomVersions),
+            optionOverrides: versioning.Options,
+            mapStructTypesOverrides: versioning.MapStructTypes);
         var pathComparer = StringComparer.OrdinalIgnoreCase;
 
         switch (gameDirectory)
@@ -212,7 +214,7 @@ public class CUE4ParseViewModel : ViewModel
                     _ when versionContainer.Game is EGame.GAME_BlackStigma => new DefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, StringComparer.Ordinal),
                     _ when versionContainer.Game is EGame.GAME_HonorofKingsWorld => new HoKWDefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer),
                     _ when versionContainer.Game is EGame.GAME_ArcRaiders => CreateArcRaidersProvider(gameDirectory, versionContainer, pathComparer),
-                    _ => new DefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer)
+                    _ => CreateDefaultProviderMaybeWarn(gameDirectory, versionContainer, pathComparer)
                 };
 
                 break;
@@ -670,6 +672,35 @@ public class CUE4ParseViewModel : ViewModel
             SearchOption.AllDirectories,
             versionContainer,
             pathComparer);
+    }
+
+    private static AbstractVfsFileProvider CreateDefaultProviderMaybeWarn(
+        string gameDirectory,
+        VersionContainer versionContainer,
+        StringComparer pathComparer)
+    {
+        WarnIfArcRaidersPathMismatch(gameDirectory, versionContainer.Game);
+        return new DefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer);
+    }
+
+    private static void WarnIfArcRaidersPathMismatch(string gameDirectory, EGame game)
+    {
+        if (string.IsNullOrWhiteSpace(gameDirectory)) return;
+        var looksPioneer =
+            gameDirectory.Contains("PioneerGame", StringComparison.OrdinalIgnoreCase) ||
+            gameDirectory.Contains("Arc Raiders", StringComparison.OrdinalIgnoreCase) ||
+            gameDirectory.Contains("ArcRaiders", StringComparison.OrdinalIgnoreCase);
+        if (!looksPioneer) return;
+
+        var hasGlobal = File.Exists(Path.Combine(gameDirectory, "global.utoc")) ||
+                        Directory.Exists(gameDirectory) &&
+                        Directory.EnumerateFiles(gameDirectory, "global.utoc", SearchOption.AllDirectories).Any();
+        if (!hasGlobal) return;
+
+        Log.Warning(
+            "Path looks like Arc Raiders ({Dir}) but UE version is {Game}. " +
+            "Set UE version to Arc Raiders (Chinese/Tencent builds also need this — they have no Theia .meta).",
+            gameDirectory, game);
     }
 
     /// <summary>
