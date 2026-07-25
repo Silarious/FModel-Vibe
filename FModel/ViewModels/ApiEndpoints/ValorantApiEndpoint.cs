@@ -17,25 +17,66 @@ using FModel.Framework;
 using FModel.Settings;
 using OffiUtils;
 using RestSharp;
+using Serilog;
 
 namespace FModel.ViewModels.ApiEndpoints;
 
 public class ValorantApiEndpoint : AbstractApiProvider
 {
-    private const string _URL = "https://valorant-api.com/v1/fmodel/manifest";
+    // Primary host moved; keep the legacy URL as a fallback for older mirrors.
+    private static readonly string[] ManifestUrls =
+    [
+        "https://valorant-api.com/v1/fmodel/manifest",
+        "https://api.valorant-api.com/v1/fmodel/manifest"
+    ];
+
+    private static readonly string ChunkBaseUrl = "https://valorant-api.com/v1/fmodel/chunks/";
 
     public ValorantApiEndpoint(RestClient client) : base(client) { }
 
     public async Task<VManifest> GetManifestAsync(CancellationToken token)
     {
-        var request = new FRestRequest(_URL);
-        var response = await _client.ExecuteAsync(request, token).ConfigureAwait(false);
-        if (!response.IsSuccessful)
-            return null;
-        return new VManifest(response.RawBytes);
+        Exception lastError = null;
+        foreach (var url in ManifestUrls)
+        {
+            var request = new FRestRequest(url);
+            var response = await _client.ExecuteAsync(request, token).ConfigureAwait(false);
+            Log.Information("[{Method}] [{Status}({StatusCode})] '{Resource}'",
+                request.Method, response.StatusDescription, (int)response.StatusCode, response.ResponseUri?.OriginalString);
+
+            if (!response.IsSuccessful || response.RawBytes is not { Length: > 0 })
+            {
+                lastError = new Exception(
+                    $"Valorant LIVE manifest request failed ({(int)response.StatusCode} {response.StatusDescription}) at {url}");
+                continue;
+            }
+
+            // HTML error pages sometimes come back as 200 from CDNs — reject non-binary payloads.
+            if (response.RawBytes[0] == (byte)'<' || response.RawBytes[0] == (byte)'\n')
+            {
+                lastError = new Exception($"Valorant LIVE manifest endpoint returned HTML instead of binary at {url}");
+                continue;
+            }
+
+            try
+            {
+                return new VManifest(response.RawBytes);
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                Log.Warning(ex, "Failed to parse Valorant LIVE manifest from {Url}", url);
+            }
+        }
+
+        if (lastError != null)
+            Log.Error(lastError, "Could not load Valorant LIVE manifest from any known endpoint");
+        return null;
     }
 
     public VManifest GetManifest(CancellationToken token) => GetManifestAsync(token).GetAwaiter().GetResult();
+
+    internal static string GetChunkUrl(ulong id) => $"{ChunkBaseUrl}{id}";
 }
 
 public class VManifest
@@ -177,7 +218,7 @@ public readonly struct VChunk
     public readonly ulong Id;
     public readonly uint Size;
 
-    public string GetUrl() => $"https://valorant-api.com/v1/fmodel/chunks/{Id}";
+    public string GetUrl() => ValorantApiEndpoint.GetChunkUrl(Id);
 }
 
 public class VPakStream : RandomAccessStream, ICloneable

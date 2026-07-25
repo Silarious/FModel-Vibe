@@ -6,9 +6,6 @@ using System.Windows;
 
 namespace FModel.Views;
 
-/// <summary>
-/// Logique d'interaction pour DirectorySelector.xaml
-/// </summary>
 public partial class DirectorySelector
 {
     public DirectorySelector(GameSelectorViewModel gameSelectorViewModel)
@@ -19,17 +16,16 @@ public partial class DirectorySelector
 
     private void OnClick(object sender, RoutedEventArgs e)
     {
+        if (DataContext is GameSelectorViewModel vm && vm.SelectedDirectory != null)
+        {
+            var profileName = ProfileManager.EnsureFromDirectory(vm.SelectedDirectory);
+            if (!string.IsNullOrWhiteSpace(profileName))
+                UserSettings.Default.CurrentProfileName = profileName;
+            ApplicationService.ApplicationView?.ProfilesView?.Refresh();
+        }
+
         DialogResult = true;
         Close();
-    }
-
-    private void OnSaveCurrentSettingsAsProfile(object sender, RoutedEventArgs e)
-    {
-        var dialog = new ProfileNameDialog("Save Current Settings as New Profile");
-        if (!dialog.ShowDialog().GetValueOrDefault()) return;
-
-        ProfileManager.SaveCurrentAs(dialog.ProfileName);
-        ApplicationService.ApplicationView.ProfilesView.Refresh();
     }
 
     private void OnBrowseDirectories(object sender, RoutedEventArgs e)
@@ -37,16 +33,19 @@ public partial class DirectorySelector
         if (DataContext is not GameSelectorViewModel gameLauncherViewModel)
             return;
 
-        var folderBrowser = new VistaFolderBrowserDialog {ShowNewFolderButton = false};
+        var folderBrowser = new VistaFolderBrowserDialog { ShowNewFolderButton = false };
         if (folderBrowser.ShowDialog() == true)
         {
-            gameLauncherViewModel.AddUndetectedDir(folderBrowser.SelectedPath);
+            gameLauncherViewModel.CreateProfile(
+                Helper.GetGameName(folderBrowser.SelectedPath),
+                folderBrowser.SelectedPath);
+            ApplicationService.ApplicationView?.ProfilesView?.Refresh();
         }
     }
 
     private void OnBrowseManualDirectories(object sender, RoutedEventArgs e)
     {
-        var folderBrowser = new VistaFolderBrowserDialog {ShowNewFolderButton = false};
+        var folderBrowser = new VistaFolderBrowserDialog { ShowNewFolderButton = false };
         if (folderBrowser.ShowDialog() == true)
         {
             HelloGameMyNameIsDirectory.Text = folderBrowser.SelectedPath;
@@ -61,9 +60,11 @@ public partial class DirectorySelector
             string.IsNullOrEmpty(HelloGameMyNameIsDirectory.Text))
             return;
 
-        gameLauncherViewModel.AddUndetectedDir(HelloMyNameIsGame.Text, HelloGameMyNameIsDirectory.Text);
+        gameLauncherViewModel.CreateProfile(HelloMyNameIsGame.Text, HelloGameMyNameIsDirectory.Text);
         HelloMyNameIsGame.Clear();
         HelloGameMyNameIsDirectory.Clear();
+        ManualGameExpander.IsExpanded = false;
+        ApplicationService.ApplicationView?.ProfilesView?.Refresh();
     }
 
     private void OnDeleteDirectory(object sender, RoutedEventArgs e)
@@ -72,6 +73,7 @@ public partial class DirectorySelector
             return;
 
         gameLauncherViewModel.DeleteSelectedGame();
+        ApplicationService.ApplicationView?.ProfilesView?.Refresh();
     }
 
     public void AddManualGame(string directory)

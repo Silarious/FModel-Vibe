@@ -147,7 +147,13 @@ public partial class GameDirectoryViewModel : ViewModel
         if (!_hiddenArchives.IsMatch(reader.Name)) return;
 
         var fileItem = new FileItem(reader);
-        Application.Current.Dispatcher.Invoke(() => DirectoryFiles.Add(fileItem));
+        // BeginInvoke: Parallel.ForEach RegisterVfs must not block on the UI thread
+        // (Invoke deadlocks / stalls Fortnite LIVE at "Registered N Archives").
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess())
+            DirectoryFiles.Add(fileItem);
+        else
+            dispatcher.BeginInvoke(() => DirectoryFiles.Add(fileItem));
     }
 
     public void AddLooseFiles(int fileCount)
@@ -155,7 +161,7 @@ public partial class GameDirectoryViewModel : ViewModel
         if (fileCount < 1)
             return;
 
-        Application.Current.Dispatcher.Invoke(() =>
+        void AddOrUpdate()
         {
             var looseFilesContainer = DirectoryFiles.FirstOrDefault(x => x.IsLooseFilesContainer);
             if (looseFilesContainer is not null)
@@ -166,7 +172,13 @@ public partial class GameDirectoryViewModel : ViewModel
             {
                 DirectoryFiles.Add(new FileItem("Loose Files", fileCount, 0, true));
             }
-        });
+        }
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess())
+            AddOrUpdate();
+        else
+            dispatcher.BeginInvoke(AddOrUpdate);
     }
 
     public void Verify(IAesVfsReader reader)

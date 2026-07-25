@@ -10,6 +10,7 @@ using CUE4Parse.UE4.Lua.unluac;
 using FModel.Extensions;
 using FModel.Extensions.Themes;
 using FModel.Framework;
+using FModel.FMDex;
 using FModel.Services;
 using FModel.Settings;
 using FModel.ViewModels;
@@ -95,6 +96,17 @@ public partial class SettingsView
     private void OnBrowseDirectories(object sender, RoutedEventArgs e)
     {
         if (!TryBrowse(out var path)) return;
+        if (GameSelectorViewModel.TryResolveGameDirectory(path, out var ueVersion, out var resolved))
+        {
+            path = resolved;
+            if (UserSettings.Default.CurrentDir != null)
+                UserSettings.Default.CurrentDir.UeVersion = ueVersion;
+        }
+        else if (!string.IsNullOrEmpty(resolved))
+        {
+            path = resolved;
+        }
+
         UserSettings.Default.GameDirectory = path;
         ProfileManager.SyncCurrentDirToGameDirectory();
     }
@@ -122,6 +134,73 @@ public partial class SettingsView
     private void OnBrowseModels(object sender, RoutedEventArgs e)
     {
         if (TryBrowse(out var path)) UserSettings.Default.ModelDirectory = path;
+    }
+
+    private void OnBrowseFMDexDirectory(object sender, RoutedEventArgs e)
+    {
+        // Refresh displayed path from {install}/FMDex/{profile}.
+        _ = FMDexService.Instance.DirectoryPath;
+    }
+
+    private void OnBrowseFMDexFile(object sender, RoutedEventArgs e)
+    {
+        var openFileDialog = new OpenFileDialog
+        {
+            Title = "Select an FMDex file",
+            InitialDirectory = FMDexService.Instance.DirectoryPath,
+            Filter = "FMDex (*_FMDex.json.br;*_FMDex.json;*_FDex.json.br;*_FDex.json)|*_FMDex.json.br;*_FMDex.json;*_FDex.json.br;*_FDex.json|Brotli (*.br)|*.br|JSON (*.json)|*.json|All Files (*.*)|*.*"
+        };
+
+        if (!openFileDialog.ShowDialog().GetValueOrDefault())
+            return;
+
+        var path = openFileDialog.FileName;
+        UserSettings.Default.FMDexActiveFile = path;
+        FMDexService.Instance.Load(path);
+    }
+
+    private void OnOpenFMDexFolder(object sender, RoutedEventArgs e)
+    {
+        var dir = FMDexService.Instance.DirectoryPath;
+        Directory.CreateDirectory(dir);
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = dir,
+            UseShellExecute = true
+        });
+    }
+
+    private void OnDetectFMDexManifest(object sender, RoutedEventArgs e)
+    {
+        var provider = _applicationView.CUE4Parse?.Provider;
+        if (provider == null || provider.Files.Count == 0)
+        {
+            MessageBox.Show(
+                "Load a game directory first so the mounted project can be bound to FMDex.",
+                "FMDex",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        FMDexService.Instance.BindToProvider(provider);
+
+        if (FMDexService.TryReadBuildManifest(provider, out var game, out var build))
+        {
+            MessageBox.Show(
+                $"FMDex bound from BuildInfo/manifest.json:\nGame: {game}\nBuild: {build}\n\nActive: {FMDexService.Instance.LoadedPath ?? "(new index)"}",
+                "FMDex",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        var project = provider.ProjectName;
+        MessageBox.Show(
+            $"No BuildInfo/manifest.json found.\nFMDex bound to project name: {project}\n\nActive: {FMDexService.Instance.LoadedPath ?? "(new index)"}\n\nYou can still enter Build manually.",
+            "FMDex",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
     }
 
     private void OnProfileLoad(object sender, RoutedEventArgs e)
@@ -209,6 +288,16 @@ public partial class SettingsView
     private void OnProfileBrowseDirectories(object sender, RoutedEventArgs e)
     {
         if (!TryBrowse(out var path)) return;
+        if (GameSelectorViewModel.TryResolveGameDirectory(path, out var ueVersion, out var resolved))
+        {
+            path = resolved;
+            _applicationView.ProfilesView.Preview.UeVersion = ueVersion;
+        }
+        else if (!string.IsNullOrEmpty(resolved))
+        {
+            path = resolved;
+        }
+
         _applicationView.ProfilesView.Preview.GameDirectory = path;
     }
 

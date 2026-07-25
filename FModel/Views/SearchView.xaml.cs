@@ -95,6 +95,7 @@ public partial class SearchView
         if (viewModel == null)
             return;
         viewModel.FilterText = string.Empty;
+        viewModel.TagFilterText = string.Empty;
         viewModel.RefreshFilter();
     }
 

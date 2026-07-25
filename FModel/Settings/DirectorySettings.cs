@@ -30,6 +30,30 @@ public class DirectorySettings : ViewModel, ICloneable
         };
     }
 
+    /// <summary>
+    /// Fresh directory settings that never reuse live <see cref="UserSettings.PerDirectory"/>
+    /// (avoids inheriting AES / endpoints / versioning from another game).
+    /// </summary>
+    public static DirectorySettings Fresh(
+        string gameName, string gameDir, EGame ue = EGame.GAME_UE4_LATEST, bool manual = false, string aes = "")
+    {
+        return new DirectorySettings
+        {
+            GameName = gameName,
+            GameDirectory = gameDir,
+            IsManual = manual,
+            UeVersion = ue,
+            TexturePlatform = ETexturePlatform.DesktopMobile,
+            Versioning = new VersioningSettings(),
+            Endpoints = EndpointSettings.Default(gameName),
+            Directories = CustomDirectory.Default(gameName),
+            AesKeys = new AesResponse { MainKey = aes ?? "", DynamicKeys = null },
+            LastAesReload = DateTime.Today.AddDays(-1),
+            CriwareDecryptionKey = 0,
+            UnluacOpCodeMap = ""
+        };
+    }
+
     private string _gameName;
     public string GameName
     {

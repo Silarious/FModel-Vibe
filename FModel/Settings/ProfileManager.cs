@@ -201,7 +201,7 @@ public static class ProfileManager
 
     /// <summary>
     /// Write preview fields into a profile file without changing live <see cref="UserSettings.Default"/>.
-    /// Merges into an existing profile snapshot when present; otherwise clones current settings first.
+    /// New profiles start from an isolated skeleton (not a clone of the currently loaded game).
     /// </summary>
     public static void SavePreviewAs(string name, ProfilePreview preview)
     {
@@ -213,7 +213,7 @@ public static class ProfileManager
         if (File.Exists(path))
             json = JObject.Parse(File.ReadAllText(path));
         else
-            json = JObject.FromObject(UserSettings.Default);
+            json = CreateIsolatedProfileSkeleton();
 
         var gameDir = NormalizeDirKey(preview.GameDirectory ?? "");
         json["GameDirectory"] = gameDir;
@@ -242,20 +242,31 @@ public static class ProfileManager
 
         var dir = perDir[gameDir] as JObject ?? new JObject();
         dir["GameDirectory"] = gameDir;
+        dir["GameName"] = name;
         dir["UeVersion"] = (int)preview.UeVersion;
 
         var aes = dir["AesKeys"] as JObject ?? new JObject();
         aes["MainKey"] = preview.AesMainKey ?? "";
         dir["AesKeys"] = aes;
 
+        // Keep game-correct API endpoints when seeding empty; don't leave another game's URLs.
+        var defaults = EndpointSettings.Default(name);
         var endpoints = dir["Endpoints"] as JArray;
         if (endpoints == null || endpoints.Count < 2)
         {
             endpoints =
             [
-                new JObject { ["Overwrite"] = false, ["FilePath"] = "" },
                 new JObject
                 {
+                    ["Url"] = defaults[0].Url ?? "",
+                    ["Path"] = defaults[0].Path ?? "",
+                    ["Overwrite"] = false,
+                    ["FilePath"] = ""
+                },
+                new JObject
+                {
+                    ["Url"] = defaults[1].Url ?? "",
+                    ["Path"] = defaults[1].Path ?? "",
                     ["Overwrite"] = !string.IsNullOrWhiteSpace(preview.MappingFilePath),
                     ["FilePath"] = preview.MappingFilePath ?? ""
                 }
@@ -276,6 +287,182 @@ public static class ProfileManager
     }
 
     /// <summary>
+    /// Minimal profile JSON that does <b>not</b> clone live <see cref="UserSettings.Default"/>
+    /// (avoids copying another game's PerDirectory / AES / endpoints).
+    /// </summary>
+    private static JObject CreateIsolatedProfileSkeleton()
+    {
+        var output = UserSettings.Default.OutputDirectory ?? "";
+        var exports = string.IsNullOrWhiteSpace(output) ? "" : Path.Combine(output, "Exports");
+        return new JObject
+        {
+            ["OutputDirectory"] = output,
+            ["RawDataDirectory"] = exports,
+            ["PropertiesDirectory"] = exports,
+            ["TextureDirectory"] = exports,
+            ["AudioDirectory"] = exports,
+            ["ModelDirectory"] = exports,
+            ["CodeDirectory"] = exports,
+            ["GameDirectory"] = "",
+            ["CurrentProfileName"] = "",
+            ["PerDirectory"] = new JObject()
+        };
+    }
+
+    /// <summary>
+    /// Write a self-contained profile that only contains <paramref name="dir"/> (no other games).
+    /// LIVE defaults always get a dedicated <c>{Output}/Exports/{Profile}</c> folder — never another profile's paths.
+    /// </summary>
+    public static void WriteIsolatedProfile(string name, DirectorySettings dir)
+    {
+        if (string.IsNullOrWhiteSpace(name) || dir == null) return;
+
+        Directory.CreateDirectory(ProfilesDirectory);
+        var path = GetProfilePath(name);
+
+        var json = CreateIsolatedProfileSkeleton();
+        var exportDir = DefaultExportDirectory(name);
+        var isLiveDefault = string.Equals(name, "Fortnite", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(name, "VALORANT", StringComparison.OrdinalIgnoreCase);
+
+        if (!isLiveDefault && File.Exists(path) && TryReadPreview(name, out var existing) &&
+            !IsExportPathPolluted(name, existing.RawDataDirectory))
+        {
+            // Keep user export paths for non-LIVE profiles when they look clean.
+            if (!string.IsNullOrWhiteSpace(existing.RawDataDirectory))
+                json["RawDataDirectory"] = existing.RawDataDirectory;
+            if (!string.IsNullOrWhiteSpace(existing.PropertiesDirectory))
+                json["PropertiesDirectory"] = existing.PropertiesDirectory;
+            if (!string.IsNullOrWhiteSpace(existing.TextureDirectory))
+                json["TextureDirectory"] = existing.TextureDirectory;
+            if (!string.IsNullOrWhiteSpace(existing.AudioDirectory))
+                json["AudioDirectory"] = existing.AudioDirectory;
+            if (!string.IsNullOrWhiteSpace(existing.ModelDirectory))
+                json["ModelDirectory"] = existing.ModelDirectory;
+            if (!string.IsNullOrWhiteSpace(existing.CodeDirectory))
+                json["CodeDirectory"] = existing.CodeDirectory;
+        }
+        else
+        {
+            json["RawDataDirectory"] = exportDir;
+            json["PropertiesDirectory"] = exportDir;
+            json["TextureDirectory"] = exportDir;
+            json["AudioDirectory"] = exportDir;
+            json["ModelDirectory"] = exportDir;
+            json["CodeDirectory"] = exportDir;
+        }
+
+        var gameDir = CanonicalizeGameDirectory(dir.GameDirectory ?? "");
+        json["GameDirectory"] = gameDir;
+        json["UeVersion"] = (int)dir.UeVersion;
+        json["CurrentProfileName"] = name;
+
+        // Ensure API endpoints are valid for mappings/AES pull after restore.
+        foreach (var ep in dir.Endpoints ?? [])
+            ep.EnsureConfiguredValidity();
+
+        var dirObj = JObject.FromObject(dir);
+        dirObj["GameDirectory"] = gameDir;
+        dirObj["GameName"] = dir.GameName ?? name;
+        json["PerDirectory"] = new JObject { [gameDir] = dirObj };
+
+        File.WriteAllText(path, json.ToString(Formatting.Indented));
+        try { Directory.CreateDirectory(exportDir); }
+        catch { /* ignore */ }
+    }
+
+    /// <summary>Per-profile export root: <c>{OutputDirectory}/Exports/{ProfileName}</c>.</summary>
+    public static string DefaultExportDirectory(string profileName)
+    {
+        var output = UserSettings.Default.OutputDirectory;
+        if (string.IsNullOrWhiteSpace(output))
+            output = Path.Combine(AppContext.BaseDirectory, "Output");
+        var safe = string.Join("_", (profileName ?? "Game").Split(Path.GetInvalidFileNameChars()));
+        return Path.Combine(output, "Exports", safe);
+    }
+
+    private static bool IsExportPathPolluted(string profileName, string exportPath)
+    {
+        if (string.IsNullOrWhiteSpace(exportPath)) return true;
+        var expected = DefaultExportDirectory(profileName);
+        if (string.Equals(
+                exportPath.TrimEnd('\\', '/'),
+                expected.TrimEnd('\\', '/'),
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Another profile's name in the path (and not ours) ⇒ inherited wrongly.
+        foreach (var other in GetProfileNames())
+        {
+            if (string.Equals(other, profileName, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (exportPath.Contains(other, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsProfilePolluted(string name, DirectorySettings expected)
+    {
+        var path = GetProfilePath(name);
+        if (!File.Exists(path) || expected == null) return true;
+
+        try
+        {
+            var json = JObject.Parse(File.ReadAllText(path));
+            var gameDir = json.Value<string>("GameDirectory") ?? "";
+            var expectedKey = NormalizeDirKey(expected.GameDirectory);
+
+            // LIVE profiles must store the opaque trigger token, never an absolute expansion.
+            if (TryCanonicalizeLiveTrigger(expected.GameDirectory, out var liveExpected) &&
+                !string.Equals(gameDir.Trim(), liveExpected, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (!string.Equals(NormalizeDirKey(gameDir), expectedKey, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(gameDir, expected.GameDirectory, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (json["PerDirectory"] is not JObject perDir)
+                return true;
+
+            if (perDir.Count != 1)
+                return true;
+
+            var only = perDir.Properties().First();
+            if (!string.Equals(NormalizeDirKey(only.Name), expectedKey, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(only.Name, expected.GameDirectory, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (IsExportPathPolluted(name, json.Value<string>("RawDataDirectory")))
+                return true;
+
+            // LIVE / known games must keep their AES/mapping API endpoints, not another game's.
+            if (only.Value is JObject dirObj &&
+                dirObj["Endpoints"] is JArray endpoints &&
+                endpoints.Count > 0)
+            {
+                var defaults = EndpointSettings.Default(name);
+                var expectedUrl = defaults[0].Url ?? "";
+                if (!string.IsNullOrEmpty(expectedUrl))
+                {
+                    var actualUrl = endpoints[0]?.Value<string>("Url")
+                                    ?? endpoints[0]?.Value<string>("url")
+                                    ?? "";
+                    if (!string.Equals(actualUrl, expectedUrl, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Flush live <see cref="UserSettings.CurrentDir"/> into <see cref="UserSettings.PerDirectory"/>,
     /// then serialize the full settings snapshot (AES, mappings, UE version, export paths, …).
     /// </summary>
@@ -286,12 +473,246 @@ public static class ProfileManager
         Directory.CreateDirectory(ProfilesDirectory);
         SyncCurrentDirToGameDirectory();
 
+        // Save only the active game's PerDirectory entry so profiles stay isolated.
         var json = JObject.FromObject(UserSettings.Default);
         json["UeVersion"] = (int)(UserSettings.Default.CurrentDir?.UeVersion ?? EGame.GAME_UE4_LATEST);
+
+        var activeDir = UserSettings.Default.GameDirectory;
+        if (!string.IsNullOrWhiteSpace(activeDir) && json["PerDirectory"] is JObject perDir)
+        {
+            var key = NormalizeDirKey(activeDir);
+            JToken keep = null;
+            foreach (var prop in perDir.Properties().ToList())
+            {
+                if (string.Equals(NormalizeDirKey(prop.Name), key, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(prop.Name, activeDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    keep = prop.Value;
+                }
+            }
+
+            var isolated = new JObject();
+            if (keep != null)
+                isolated[key] = keep;
+            else if (UserSettings.Default.CurrentDir != null)
+                isolated[key] = JObject.FromObject(UserSettings.Default.CurrentDir);
+            json["PerDirectory"] = isolated;
+            json["GameDirectory"] = key;
+        }
 
         File.WriteAllText(GetProfilePath(name), json.ToString(Formatting.Indented));
         UserSettings.Default.CurrentProfileName = name;
     }
+
+    /// <summary>
+    /// Build <see cref="DirectorySettings"/> from a saved profile for the Profile Selector UI
+    /// without mutating live <see cref="UserSettings.Default"/>.
+    /// </summary>
+    public static bool TryBuildDirectoryFromProfile(string name, out DirectorySettings dir)
+    {
+        dir = null;
+        if (string.IsNullOrWhiteSpace(name) || !Exists(name)) return false;
+
+        try
+        {
+            var json = JObject.Parse(File.ReadAllText(GetProfilePath(name)));
+            var gameDir = CanonicalizeGameDirectory(json.Value<string>("GameDirectory") ?? "");
+            EGame ue = EGame.GAME_UE4_LATEST;
+            if (json.TryGetValue("UeVersion", out var ueToken) && ueToken.Type == JTokenType.Integer)
+                ue = (EGame)(int)ueToken;
+
+            DirectorySettings built = null;
+            if (json["PerDirectory"] is JObject perDir)
+            {
+                JObject dirObj = null;
+                if (!string.IsNullOrWhiteSpace(gameDir) && perDir[gameDir] is JObject exact)
+                    dirObj = exact;
+                else
+                {
+                    var normalized = NormalizeDirKey(gameDir);
+                    foreach (var prop in perDir.Properties())
+                    {
+                        if (string.Equals(prop.Name, gameDir, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(NormalizeDirKey(prop.Name), normalized, StringComparison.OrdinalIgnoreCase) ||
+                            (TryCanonicalizeLiveTrigger(prop.Name, out var liveKey) &&
+                             string.Equals(liveKey, gameDir, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            dirObj = prop.Value as JObject;
+                            break;
+                        }
+                    }
+
+                    dirObj ??= perDir.Properties().FirstOrDefault()?.Value as JObject;
+                }
+
+                if (dirObj != null)
+                    built = dirObj.ToObject<DirectorySettings>();
+            }
+
+            built ??= DirectorySettings.Fresh(name, gameDir, ue);
+            built.GameName = name;
+            built.GameDirectory = string.IsNullOrWhiteSpace(gameDir) ? (built.GameDirectory ?? "") : gameDir;
+            if (json.TryGetValue("UeVersion", out ueToken) && ueToken.Type == JTokenType.Integer)
+                built.UeVersion = (EGame)(int)ueToken;
+
+            // LIVE defaults stay protected; everything else is removable from the selector.
+            var isLiveDefault = string.Equals(name, "Fortnite", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(name, "VALORANT", StringComparison.OrdinalIgnoreCase);
+            built.IsManual = !isLiveDefault;
+
+            foreach (var ep in built.Endpoints ?? [])
+                ep.EnsureConfiguredValidity();
+
+            dir = built;
+            return true;
+        }
+        catch
+        {
+            dir = null;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Seed default <c>Fortnite</c> / <c>VALORANT</c> profiles that point at the LIVE stream triggers
+    /// (not local installs). Repairs profiles that inherited another game's settings.
+    /// Also seeds <c>VALORANT (Installed)</c> when a local Riot install is found — LIVE streaming
+    /// depends on valorant-api.com/fmodel which is currently returning 404.
+    /// </summary>
+    public static void EnsureLiveDefaults()
+    {
+        EnsureFromDirectory(
+            DirectorySettings.Fresh("Fortnite", FModel.Constants._FN_LIVE_TRIGGER, EGame.GAME_UE5_8),
+            "Fortnite");
+        EnsureFromDirectory(
+            DirectorySettings.Fresh("VALORANT", FModel.Constants._VAL_LIVE_TRIGGER, EGame.GAME_Valorant),
+            "VALORANT");
+
+        TryEnsureLocalValorantInstalledProfile();
+
+        // If a LIVE profile is currently active, sync repaired export folders into live settings.
+        ApplyProfileExportDirsToLiveIfActive("Fortnite");
+        ApplyProfileExportDirsToLiveIfActive("VALORANT");
+    }
+
+    private static void TryEnsureLocalValorantInstalledProfile()
+    {
+        try
+        {
+            foreach (var drive in DriveInfo.GetDrives())
+            {
+                var launcher = Path.Combine(drive.Name, "ProgramData", "Riot Games", "RiotClientInstalls.json");
+                if (!File.Exists(launcher)) continue;
+
+                var json = JObject.Parse(File.ReadAllText(launcher));
+                if (json["associated_client"] is not JObject clients) continue;
+
+                foreach (var prop in clients.Properties())
+                {
+                    var key = (prop.Name ?? "").Replace('/', '\\');
+                    if (!key.Contains("VALORANT", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var gameDir = Path.Combine(key.TrimEnd('\\'), "ShooterGame", "Content", "Paks");
+                    if (!Directory.Exists(gameDir)) continue;
+
+                    EnsureFromDirectory(
+                        DirectorySettings.Fresh("VALORANT (Installed)", gameDir, EGame.GAME_Valorant, manual: true),
+                        "VALORANT (Installed)");
+                    return;
+                }
+            }
+        }
+        catch
+        {
+            // optional convenience profile — ignore detect failures
+        }
+    }
+
+    private static void ApplyProfileExportDirsToLiveIfActive(string name)
+    {
+        if (!string.Equals(UserSettings.Default.CurrentProfileName, name, StringComparison.OrdinalIgnoreCase))
+            return;
+        if (!TryReadPreview(name, out var preview))
+            return;
+
+        UserSettings.Default.RawDataDirectory = preview.RawDataDirectory ?? "";
+        UserSettings.Default.PropertiesDirectory = preview.PropertiesDirectory ?? "";
+        UserSettings.Default.TextureDirectory = preview.TextureDirectory ?? "";
+        UserSettings.Default.AudioDirectory = preview.AudioDirectory ?? "";
+        UserSettings.Default.ModelDirectory = preview.ModelDirectory ?? "";
+        UserSettings.Default.CodeDirectory = preview.CodeDirectory ?? "";
+    }
+
+    /// <summary>
+    /// Create a named profile snapshot from a detected / manual directory if one does not exist yet.
+    /// LIVE entries normalize to <c>Fortnite</c> / <c>VALORANT</c> profile names.
+    /// Polluted profiles (cloned from another game) are rewritten in isolation.
+    /// </summary>
+    public static string EnsureFromDirectory(DirectorySettings dir, string profileName = null)
+    {
+        if (dir == null || string.IsNullOrWhiteSpace(dir.GameDirectory))
+            return null;
+
+        var name = NormalizeProfileName(profileName ?? dir.GameName);
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        // Prefer a fresh copy for well-known LIVE defaults so endpoints/AES never come from another game.
+        // Always pin Archive to the opaque LIVE trigger — never trust a UI/path edit that would create
+        // DefaultFileProvider("…\fortnite-live.manifest") and load zero paks.
+        DirectorySettings clean = dir;
+        if (string.Equals(name, "Fortnite", StringComparison.OrdinalIgnoreCase))
+        {
+            clean = DirectorySettings.Fresh(
+                "Fortnite",
+                FModel.Constants._FN_LIVE_TRIGGER,
+                EGame.GAME_UE5_8,
+                manual: false,
+                aes: dir.AesKeys?.MainKey ?? "");
+        }
+        else if (string.Equals(name, "VALORANT", StringComparison.OrdinalIgnoreCase))
+        {
+            clean = DirectorySettings.Fresh(
+                "VALORANT",
+                FModel.Constants._VAL_LIVE_TRIGGER,
+                EGame.GAME_Valorant,
+                manual: false,
+                aes: dir.AesKeys?.MainKey ?? "");
+        }
+
+        // Existing healthy profile: do NOT push empty Fresh AES into live PerDirectory
+        // (EnsureLiveDefaults used to wipe keys every launch → mounts hang / never finish).
+        if (Exists(name) && !IsProfilePolluted(name, clean))
+            return name;
+
+        SetPerDirectory(clean.GameDirectory, clean);
+        WriteIsolatedProfile(name, clean);
+        return name;
+    }
+
+    /// <summary>Stable profile name for a directory entry (LIVE → Fortnite / VALORANT).</summary>
+    public static string NormalizeProfileName(string gameName)
+    {
+        if (string.IsNullOrWhiteSpace(gameName)) return gameName;
+
+        var n = gameName.Trim();
+        if (n.Equals("Fortnite [LIVE]", StringComparison.OrdinalIgnoreCase) ||
+            n.Equals("Fortnite", StringComparison.OrdinalIgnoreCase))
+            return "Fortnite";
+
+        if (n.Equals("VALORANT [LIVE]", StringComparison.OrdinalIgnoreCase) ||
+            n.Equals("Valorant [LIVE]", StringComparison.OrdinalIgnoreCase) ||
+            n.Equals("VALORANT", StringComparison.OrdinalIgnoreCase) ||
+            n.Equals("Valorant", StringComparison.OrdinalIgnoreCase))
+            return "VALORANT";
+
+        // Installed variants keep the suffix so they don't collide with LIVE defaults.
+        return n;
+    }
+
+    private static string FirstNonEmpty(params string[] values)
+        => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? "";
 
     /// <summary>
     /// Load a profile onto the live <see cref="UserSettings.Default"/> and rebind
@@ -314,6 +735,10 @@ public static class ProfileManager
         JsonConvert.PopulateObject(text, UserSettings.Default);
 
         RebindCurrentDirFromPerDirectory(json);
+
+        // Profile JSON often leaves IsValid=false even when Url/Path are set — required for InitMappings.
+        foreach (var ep in UserSettings.Default.CurrentDir?.Endpoints ?? [])
+            ep.EnsureConfiguredValidity();
 
         UserSettings.Default.CurrentProfileName = name;
         // Keep AppSettings.json in sync so restart / exit don't clobber the loaded profile.
@@ -341,11 +766,17 @@ public static class ProfileManager
 
     /// <summary>
     /// Normalize a pak-folder path for use as a <see cref="UserSettings.PerDirectory"/> key.
+    /// LIVE stream triggers (<c>fortnite-live.manifest</c> / <c>valorant-live.manifest</c>)
+    /// are kept as opaque tokens — never resolved with <see cref="Path.GetFullPath"/>.
     /// </summary>
     public static string NormalizeDirKey(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return path ?? "";
         var trimmed = path.Trim().TrimEnd('\\', '/');
+
+        if (TryCanonicalizeLiveTrigger(trimmed, out var live))
+            return live;
+
         try
         {
             return Path.GetFullPath(trimmed);
@@ -354,6 +785,62 @@ public static class ProfileManager
         {
             return trimmed;
         }
+    }
+
+    /// <summary>
+    /// True when <paramref name="path"/> is (or ends with) a LIVE stream trigger token.
+    /// </summary>
+    public static bool IsLiveTrigger(string path)
+        => TryCanonicalizeLiveTrigger(path, out _);
+
+    /// <summary>
+    /// Map a LIVE trigger — or a wrongly expanded absolute path ending in one — back to the
+    /// canonical token used by <see cref="ViewModels.CUE4ParseViewModel"/> provider selection.
+    /// </summary>
+    public static bool TryCanonicalizeLiveTrigger(string path, out string trigger)
+    {
+        trigger = null;
+        if (string.IsNullOrWhiteSpace(path)) return false;
+
+        var trimmed = path.Trim().TrimEnd('\\', '/');
+        if (trimmed.Equals(FModel.Constants._FN_LIVE_TRIGGER, StringComparison.OrdinalIgnoreCase))
+        {
+            trigger = FModel.Constants._FN_LIVE_TRIGGER;
+            return true;
+        }
+
+        if (trimmed.Equals(FModel.Constants._VAL_LIVE_TRIGGER, StringComparison.OrdinalIgnoreCase))
+        {
+            trigger = FModel.Constants._VAL_LIVE_TRIGGER;
+            return true;
+        }
+
+        // Polluted profiles stored Path.GetFullPath("valorant-live.manifest") →
+        // C:\...\publish\valorant-live.manifest
+        var fileName = Path.GetFileName(trimmed);
+        if (fileName.Equals(FModel.Constants._FN_LIVE_TRIGGER, StringComparison.OrdinalIgnoreCase))
+        {
+            trigger = FModel.Constants._FN_LIVE_TRIGGER;
+            return true;
+        }
+
+        if (fileName.Equals(FModel.Constants._VAL_LIVE_TRIGGER, StringComparison.OrdinalIgnoreCase))
+        {
+            trigger = FModel.Constants._VAL_LIVE_TRIGGER;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Normalize game directory for provider use: LIVE triggers stay tokens; real paths get FullPath.
+    /// </summary>
+    public static string CanonicalizeGameDirectory(string path)
+    {
+        if (TryCanonicalizeLiveTrigger(path, out var live))
+            return live;
+        return NormalizeDirKey(path);
     }
 
     /// <summary>
@@ -464,7 +951,7 @@ public static class ProfileManager
         if (string.IsNullOrWhiteSpace(gameDir))
             return;
 
-        gameDir = NormalizeDirKey(gameDir);
+        gameDir = CanonicalizeGameDirectory(gameDir);
         UserSettings.Default.GameDirectory = gameDir;
 
         if (!TryGetPerDirectory(gameDir, out var dir) || dir == null)
@@ -475,6 +962,7 @@ public static class ProfileManager
                 return;
         }
 
+        dir.GameDirectory = gameDir;
         SetPerDirectory(gameDir, dir);
 
         // Explicit top-level UeVersion wins (same as historical profile format).

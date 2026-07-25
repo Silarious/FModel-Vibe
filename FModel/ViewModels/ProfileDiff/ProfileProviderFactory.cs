@@ -5,6 +5,7 @@ using System.Linq;
 using CUE4Parse.Encryption.Aes;
 using CUE4Parse.FileProvider;
 using CUE4Parse.FileProvider.Vfs;
+using CUE4Parse.GameTypes.ArcRaiders.Encryption.Theia;
 using CUE4Parse.GameTypes.AshEchoes.FileProvider;
 using CUE4Parse.GameTypes.HonorOfKings.FileProvider;
 using CUE4Parse.MappingsProvider;
@@ -33,7 +34,7 @@ public static class ProfileProviderFactory
             game: config.UeVersion,
             platform: config.TexturePlatform);
         var pathComparer = StringComparer.OrdinalIgnoreCase;
-        var gameDirectory = config.GameDirectory;
+        var gameDirectory = ProfileManager.CanonicalizeGameDirectory(config.GameDirectory);
 
         AbstractVfsFileProvider provider = gameDirectory switch
         {
@@ -111,7 +112,8 @@ public static class ProfileProviderFactory
                 new DefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, StringComparer.Ordinal),
             _ when versionContainer.Game is EGame.GAME_HonorofKingsWorld =>
                 new HoKWDefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer),
-            _ when versionContainer.Game is EGame.GAME_ArcRaiders =>
+            _ when versionContainer.Game is EGame.GAME_ArcRaiders ||
+                   TheiaPakDecryptor.DirectoryHasTheiaMeta(gameDirectory) =>
                 new ArcRaidersFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer),
             _ => new DefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer)
         };

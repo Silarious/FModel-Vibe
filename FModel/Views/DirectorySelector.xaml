@@ -8,11 +8,11 @@
         xmlns:adonisExtensions="clr-namespace:AdonisUI.Extensions;assembly=AdonisUI"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize" IconVisibility="Collapsed" SizeToContent="Height"
         MinHeight="{Binding Source={x:Static SystemParameters.MaximizedPrimaryScreenHeight}, Converter={converters:RatioConverter}, ConverterParameter='0.20'}"
-        Width="{Binding Source={x:Static SystemParameters.MaximizedPrimaryScreenWidth}, Converter={converters:RatioConverter}, ConverterParameter='0.25'}"
+        Width="{Binding Source={x:Static SystemParameters.MaximizedPrimaryScreenWidth}, Converter={converters:RatioConverter}, ConverterParameter='0.28'}"
         AllowDrop="True">
     <adonisControls:AdonisWindow.Style>
         <Style TargetType="adonisControls:AdonisWindow" BasedOn="{StaticResource {x:Type adonisControls:AdonisWindow}}" >
-            <Setter Property="Title" Value="Directory Selector" />
+            <Setter Property="Title" Value="Profile Selector" />
         </Style>
     </adonisControls:AdonisWindow.Style>
     <Grid>
@@ -22,18 +22,17 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Orientation="Vertical" Margin="10 5 10 10">
-            <TextBlock Text="Instruction" HorizontalAlignment="Center" FontSize="20" FontWeight="SemiBold" />
-            <TextBlock TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center"
-                       Text="We like to make things as simple as possible. Choose between the detected games or manually add your own. FModel will use this information to automatically find archives to load and decrypt if needed. Make sure to not skip this step!" />
+        <StackPanel Grid.Row="0" Orientation="Vertical" Margin="14 8 14 6">
+            <TextBlock Text="Choose a Profile" HorizontalAlignment="Center" FontSize="18" FontWeight="SemiBold" />
+            <TextBlock TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center" Margin="0 4 0 0" Opacity="0.85"
+                       Text="Pick a saved profile. Fortnite and VALORANT default to LIVE. Make a new profile for any other pak folder." />
         </StackPanel>
 
-        <GroupBox Grid.Row="1" adonisExtensions:LayerExtension.Layer="2" Margin="10 10 10 18"
+        <GroupBox Grid.Row="1" adonisExtensions:LayerExtension.Layer="2" Margin="10 6 10 14"
                   Padding="{adonisUi:Space 0}" Background="Transparent">
             <StackPanel>
                 <Grid x:Name="Hello" Margin="0 5">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -46,20 +45,21 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Detected Game" VerticalAlignment="Center" Margin="0 0 0 5" />
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Profile" VerticalAlignment="Center" Margin="0 0 0 5"
+                               ToolTip="Named profile from Settings → Profiles" />
                     <controls:FilterableComboBox Grid.Row="0" Grid.Column="2" Grid.ColumnSpan="3"
                                                  ItemsSource="{Binding DetectedDirectories}" Margin="0 0 0 5"
                                                  Style="{StaticResource UComboBox}"
-                                                 adonisExtensions:WatermarkExtension.Watermark="Search for a game..."
+                                                 adonisExtensions:WatermarkExtension.Watermark="Search profiles…"
                                                  VerticalAlignment="Center" SelectedItem="{Binding SelectedDirectory, Mode=TwoWay}">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding GameName, Converter={x:Static converters:StringToGameConverter.Instance}}" />
+                                <TextBlock Text="{Binding GameName}" />
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </controls:FilterableComboBox>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="UE Versions" VerticalAlignment="Center" Margin="0 0 0 5" />
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="UE Version" VerticalAlignment="Center" Margin="0 0 0 5" />
                     <controls:FilterableComboBox Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="3" Margin="0 0 0 5"
                                                  ItemsSource="{Binding UeGames}"
                                                  Style="{StaticResource UComboBox}"
@@ -71,11 +71,13 @@
                         </ComboBox.ItemTemplate>
                     </controls:FilterableComboBox>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Directory" VerticalAlignment="Center" />
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Archive" VerticalAlignment="Center"
+                               ToolTip="Pak folder path, or LIVE stream trigger" />
                     <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding SelectedDirectory.GameDirectory, Mode=TwoWay}" />
-                    <Button Grid.Row="2" Grid.Column="4" Content="..." HorizontalAlignment="Right" Click="OnBrowseDirectories" />
+                    <Button Grid.Row="2" Grid.Column="4" Content="..." HorizontalAlignment="Right" Click="OnBrowseDirectories"
+                            ToolTip="Browse for a pak folder (creates a new profile)" />
                     <Button Grid.Row="2" Grid.Column="4" Style="{DynamicResource {x:Static adonisUi:Styles.AccentButton}}" Padding="0"
-                            Click="OnDeleteDirectory" Width="{Binding ActualWidth, ElementName=OkGuysButWhoFuckingAsked}" ToolTip="Delete Game"
+                            Click="OnDeleteDirectory" Width="{Binding ActualWidth, ElementName=OkGuysButWhoFuckingAsked}" ToolTip="Delete Profile"
                             Visibility="{Binding SelectedDirectory.IsManual, Converter={StaticResource BoolToVisibilityConverter}}">
                         <Viewbox Width="16" Height="16" HorizontalAlignment="Center">
                             <Canvas Width="24" Height="24">
@@ -83,18 +85,17 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-
-                    <Button Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="5" HorizontalAlignment="Stretch" Margin="0 5 0 0"
-                            Content="Save Current Settings as New Profile" Click="OnSaveCurrentSettingsAsProfile" />
                 </Grid>
 
-                <Separator Style="{StaticResource CustomSeparator}" Tag="ADD UNDETECTED GAME" Margin="0,0,0,0"/>
-                <TextBlock Text="Drag &amp; drop folder to quickly configure new game" 
+                <Separator Style="{StaticResource CustomSeparator}" Tag="MAKE NEW PROFILE" Margin="0,8,0,0"/>
+                <TextBlock Text="Drag &amp; drop a folder, or fill in name + archive path below"
                            HorizontalAlignment="Center"
                            Foreground="{DynamicResource {x:Static adonisUi:Brushes.ForegroundBrush}}"
+                           Opacity="0.8"
                            Margin="0,0,0,5" />
-                <Expander x:Name="ManualGameExpander" ExpandDirection="Down" IsExpanded="False">
-                    <Grid MaxWidth="{Binding ActualWidth, ElementName=Hello}">
+                <Expander x:Name="ManualGameExpander" ExpandDirection="Down" IsExpanded="False"
+                          Header="New profile details">
+                    <Grid MaxWidth="{Binding ActualWidth, ElementName=Hello}" Margin="0 6 0 0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="5" />
@@ -111,13 +112,15 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" VerticalAlignment="Center" />
-                        <TextBox x:Name="HelloMyNameIsGame" Grid.Row="0" Grid.Column="2" Grid.ColumnSpan="5" />
+                        <TextBox x:Name="HelloMyNameIsGame" Grid.Row="0" Grid.Column="2" Grid.ColumnSpan="5"
+                                 adonisExtensions:WatermarkExtension.Watermark="Profile name (e.g. Arc Raiders)" />
 
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Directory" VerticalAlignment="Center" />
-                        <TextBox x:Name="HelloGameMyNameIsDirectory" Grid.Row="2" Grid.Column="2" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Archive" VerticalAlignment="Center" />
+                        <TextBox x:Name="HelloGameMyNameIsDirectory" Grid.Row="2" Grid.Column="2"
+                                 adonisExtensions:WatermarkExtension.Watermark="…\Content\Paks" />
                         <Button x:Name="OkGuysButWhoFuckingAsked" Grid.Row="2" Grid.Column="4" Content="..." HorizontalAlignment="Right" Click="OnBrowseManualDirectories" />
                         <Button Grid.Row="2" Grid.Column="6" Style="{DynamicResource {x:Static adonisUi:Styles.AccentButton}}" Padding="0"
-                                Click="OnAddDirectory" ToolTip="Add Game" Width="{Binding ActualWidth, ElementName=OkGuysButWhoFuckingAsked}">
+                                Click="OnAddDirectory" ToolTip="Create Profile" Width="{Binding ActualWidth, ElementName=OkGuysButWhoFuckingAsked}">
                             <Viewbox Width="16" Height="16" HorizontalAlignment="Center">
                                 <Canvas Width="24" Height="24">
                                     <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.ForegroundBrush}}" Data="{StaticResource AddIcon}" />

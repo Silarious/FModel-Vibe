@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -157,7 +158,11 @@ public class FLogger : ITextFormatter
                 }
                 else
                 {
-                    Process.Start("explorer.exe", $"/select, \"{uri.AbsoluteUri}\"");
+                    var local = uri.IsFile ? uri.LocalPath : uri.OriginalString;
+                    if (Directory.Exists(local))
+                        Process.Start(new ProcessStartInfo { FileName = local, UseShellExecute = true });
+                    else
+                        Process.Start("explorer.exe", $"/select, \"{local}\"");
                 }
             };
         }

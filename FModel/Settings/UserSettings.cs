@@ -56,8 +56,18 @@ namespace FModel.Settings
 
         public static bool IsEndpointValid(EEndpointType type, out EndpointSettings endpoint)
         {
-            endpoint = Default.CurrentDir.Endpoints[(int) type];
-            return endpoint.Overwrite || endpoint.IsValid;
+            endpoint = Default.CurrentDir?.Endpoints?[(int) type];
+            if (endpoint == null) return false;
+            if (endpoint.Overwrite) return true;
+            // Profile JSON often restores Url/Path with IsValid left false — treat configured endpoints as usable.
+            if (!string.IsNullOrWhiteSpace(endpoint.Url) && !string.IsNullOrWhiteSpace(endpoint.Path))
+            {
+                if (!endpoint.IsValid)
+                    endpoint.IsValid = true;
+                return true;
+            }
+
+            return endpoint.IsValid;
         }
 
         [JsonIgnore]
@@ -256,11 +266,87 @@ namespace FModel.Settings
             set => SetProperty(ref _autoLoadAllFilesOnStartup, value);
         }
 
+        private bool _autoLoadFortniteLiveOnStartup;
+        /// <summary>
+        /// When true, Fortnite LIVE downloads/registers CDN archives during startup.
+        /// Off by default so launching with a LIVE profile does not hammer the network.
+        /// Use Directory → Load Fortnite LIVE… when you want streams.
+        /// </summary>
+        public bool AutoLoadFortniteLiveOnStartup
+        {
+            get => _autoLoadFortniteLiveOnStartup;
+            set => SetProperty(ref _autoLoadFortniteLiveOnStartup, value);
+        }
+
+        private bool _fortniteLiveIncludeUefn;
+        /// <summary>
+        /// When true, Fortnite LIVE also registers UEFN/Creative archives (slower startup).
+        /// </summary>
+        public bool FortniteLiveIncludeUefn
+        {
+            get => _fortniteLiveIncludeUefn;
+            set => SetProperty(ref _fortniteLiveIncludeUefn, value);
+        }
+
         private bool _convertUint64ToFloat;
         public bool ConvertUint64ToFloat
         {
             get => _convertUint64ToFloat;
             set => SetProperty(ref _convertUint64ToFloat, value);
+        }
+
+        private string _fmDexDirectory = string.Empty;
+        /// <summary>
+        /// Display path for FMDex output. Always <c>{install}/FMDex/{Profile}</c>
+        /// (see <c>FMDexService.DirectoryPath</c>); not tied to Raw Data / Output directories.
+        /// </summary>
+        public string FMDexDirectory
+        {
+            get => _fmDexDirectory;
+            set => SetProperty(ref _fmDexDirectory, value);
+        }
+
+        private string _fmDexActiveFile = string.Empty;
+        /// <summary>Full path of the active FMDex file (<c>*_FMDex.json.br</c> preferred; plain/legacy still loads).</summary>
+        public string FMDexActiveFile
+        {
+            get => _fmDexActiveFile;
+            set => SetProperty(ref _fmDexActiveFile, value);
+        }
+
+        private bool _autoIndexUnindexedOnLoad = true;
+        /// <summary>When opening a package missing from FMDex, append its export class tags automatically.</summary>
+        public bool AutoIndexUnindexedOnLoad
+        {
+            get => _autoIndexUnindexedOnLoad;
+            set => SetProperty(ref _autoIndexUnindexedOnLoad, value);
+        }
+
+        private string _fmDexGame = string.Empty;
+        /// <summary>Game/project name written into active FMDex (e.g. PioneerGame). Manual entry wins over auto-detect.</summary>
+        public string FMDexGame
+        {
+            get => _fmDexGame;
+            set => SetProperty(ref _fmDexGame, value ?? string.Empty);
+        }
+
+        private string _fmDexBuild = string.Empty;
+        /// <summary>Build identifier written into active FMDex (e.g. CL1299607-…-BK4338 from BuildInfo/manifest.json).</summary>
+        public string FMDexBuild
+        {
+            get => _fmDexBuild;
+            set => SetProperty(ref _fmDexBuild, value ?? string.Empty);
+        }
+
+        private int _fmDexMaxThreads;
+        /// <summary>
+        /// Max parallel workers for FMDex folder/selection indexing.
+        /// 0 = auto (about 4× CPU count, min 32) for I/O-bound Theia/pak reads.
+        /// </summary>
+        public int FMDexMaxThreads
+        {
+            get => _fmDexMaxThreads;
+            set => SetProperty(ref _fmDexMaxThreads, Math.Max(0, value));
         }
 
         private string _currentProfileName = "Default";

@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -6,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows.Data;
 using CUE4Parse.FileProvider.Objects;
 using CUE4Parse.UE4.VirtualFileSystem;
+using FModel.FMDex;
 using FModel.Framework;
 
 namespace FModel.ViewModels;
@@ -24,6 +26,14 @@ public class SearchViewModel : ViewModel
     {
         get => _filterText;
         set => SetProperty(ref _filterText, value);
+    }
+
+    private string _tagFilterText = string.Empty;
+    /// <summary>Class-tag filter against FMDex (e.g. Texture2D). Unindexed still appear at bottom.</summary>
+    public string TagFilterText
+    {
+        get => _tagFilterText;
+        set => SetProperty(ref _tagFilterText, value);
     }
 
     private bool _hasRegexEnabled;
@@ -47,7 +57,7 @@ public class SearchViewModel : ViewModel
         set => SetProperty(ref _currentSortSizeMode, value);
     }
 
-    private int _resultsCount = 0;
+    private int _resultsCount;
     public int ResultsCount
     {
         get => _resultsCount;
@@ -69,21 +79,28 @@ public class SearchViewModel : ViewModel
         SearchResults = [];
         SearchResultsView = new ListCollectionView(SearchResults)
         {
-            Filter = e => ItemFilter(e, FilterText.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)),
+            Filter = ItemFilter,
+            CustomSort = new FMDexSearchComparer(this),
         };
         ResultsCount = SearchResultsView.Count;
     }
 
     public void RefreshFilter()
     {
+        FMDexService.Instance.EnsureLoaded();
         SearchResultsView.Refresh();
         ResultsCount = SearchResultsView.Count;
     }
 
     public void ChangeCollection(IEnumerable<GameFile> files, GameFile refFile = null)
     {
+        FMDexService.Instance.EnsureLoaded();
+        // Avoid O(n log n) CustomSort work while the bulk Reset lands — sort once after.
+        var sort = SearchResultsView.CustomSort;
+        SearchResultsView.CustomSort = null;
         SearchResults.Clear();
         SearchResults.AddRange(files);
+        SearchResultsView.CustomSort = sort;
         RefFile = refFile;
         ResultsCount = SearchResultsView.Count;
     }
@@ -128,18 +145,131 @@ public class SearchViewModel : ViewModel
 
         SearchResults.Clear();
         SearchResults.AddRange(sorted);
+        RefreshFilter();
     }
 
-    private bool ItemFilter(object item, IEnumerable<string> filters)
+    private bool ItemFilter(object item)
     {
         if (item is not GameFile entry)
             return true;
 
+        if (!PathMatches(entry))
+            return false;
+
+        var tagFilter = TagFilterText?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(tagFilter))
+            return true;
+
+        // map: .umap always; indexed map-related classes; skip other unindexed noise
+        if (FMDexTagAliases.IsMapFilter(tagFilter))
+        {
+            if (FMDexTagAliases.IsUMap(entry))
+                return true;
+            if (!FMDexService.Instance.IsIndexed(entry))
+                return false;
+            return FMDexService.Instance.MatchesTagFilter(entry, tagFilter);
+        }
+
+        // Indexed (incl. extension defaults) with matching tag, OR true unindexed packages at bottom.
+        if (!FMDexService.Instance.IsIndexed(entry))
+            return true;
+
+        return FMDexService.Instance.MatchesTagFilter(entry, tagFilter);
+    }
+
+    private bool PathMatches(GameFile entry)
+    {
+        var filterText = FilterText?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(filterText))
+            return true;
+
         if (!HasRegexEnabled)
-            return filters.All(x => entry.Path.Contains(x, HasMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase));
+        {
+            var filters = filterText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var cmp = HasMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+            return filters.All(token => TokenMatches(entry.Path, entry.Extension, token, cmp));
+        }
 
         var o = RegexOptions.None;
         if (!HasMatchCaseEnabled) o |= RegexOptions.IgnoreCase;
-        return new Regex(FilterText, o).Match(entry.Path).Success;
+        // Escape so ".uasset" means a literal extension, not "any char + uasset"
+        var pattern = FilterText;
+        if (pattern.StartsWith('.') && pattern.IndexOfAny(['*', '+', '?', '[', '(', '{', '|', '\\']) < 0)
+            pattern = Regex.Escape(pattern);
+        return new Regex(pattern, o).Match(entry.Path).Success
+               || entry.Extension.Equals(FilterText.TrimStart('.'),
+                   HasMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Match a search token against path, and treat ".uasset" / "uasset" as extension filters.
+    /// </summary>
+    internal static bool TokenMatches(string path, string extension, string token, StringComparison cmp)
+    {
+        if (string.IsNullOrEmpty(token))
+            return true;
+        if (!string.IsNullOrEmpty(path) && path.Contains(token, cmp))
+            return true;
+
+        var bare = token[0] == '.' ? token[1..] : token;
+        if (bare.Length == 0)
+            return false;
+
+        // Extension-only token (no path separators / extra dots)
+        if (bare.IndexOfAny(['/', '\\', '.']) >= 0)
+            return false;
+
+        if (!string.IsNullOrEmpty(extension) && extension.Equals(bare, cmp))
+            return true;
+
+        return !string.IsNullOrEmpty(path) && path.EndsWith("." + bare, cmp);
+    }
+
+    /// <summary>Indexed matches first; unindexed last, sorted by extension then path.
+    /// For <c>map</c> filter: <c>.umap</c> first, then map-related classes.</summary>
+    private sealed class FMDexSearchComparer(SearchViewModel owner) : IComparer
+    {
+        public int Compare(object x, object y)
+        {
+            if (x is not GameFile a || y is not GameFile b)
+                return 0;
+
+            // Size sort modes temporarily own ordering.
+            if (owner.CurrentSortSizeMode != ESortSizeMode.None)
+                return 0;
+
+            var tagFilter = owner.TagFilterText?.Trim() ?? string.Empty;
+            if (FMDexTagAliases.IsMapFilter(tagFilter))
+            {
+                var aUmap = FMDexTagAliases.IsUMap(a);
+                var bUmap = FMDexTagAliases.IsUMap(b);
+                if (aUmap != bUmap)
+                    return aUmap ? -1 : 1;
+
+                // Among non-umaps: indexed map classes before anything else
+                if (!aUmap)
+                {
+                    var aIndexed = FMDexService.Instance.IsIndexed(a);
+                    var bIndexed = FMDexService.Instance.IsIndexed(b);
+                    if (aIndexed != bIndexed)
+                        return aIndexed ? -1 : 1;
+                }
+
+                return string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase);
+            }
+
+            var aIndexed2 = FMDexService.Instance.IsIndexed(a);
+            var bIndexed2 = FMDexService.Instance.IsIndexed(b);
+            if (aIndexed2 != bIndexed2)
+                return aIndexed2 ? -1 : 1;
+
+            if (!aIndexed2)
+            {
+                var ext = string.Compare(a.Extension, b.Extension, StringComparison.OrdinalIgnoreCase);
+                if (ext != 0) return ext;
+            }
+
+            return string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

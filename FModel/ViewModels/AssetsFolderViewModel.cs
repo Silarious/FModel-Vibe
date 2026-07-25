@@ -173,7 +173,8 @@ public class TreeItem : ViewModel
         {
             case GameFileViewModel entry:
             {
-                bool matchesSearch = f.Length == 0 || f.All(x => entry.Asset.Name.Contains(x, StringComparison.OrdinalIgnoreCase));
+                bool matchesSearch = f.Length == 0 || f.All(x =>
+                    SearchViewModel.TokenMatches(entry.Asset.Name, entry.Asset.Extension, x, StringComparison.OrdinalIgnoreCase));
                 bool matchesCategory = SelectedCategory == EAssetCategory.All || entry.AssetCategory.IsOfCategory(SelectedCategory);
 
                 return matchesSearch && matchesCategory;

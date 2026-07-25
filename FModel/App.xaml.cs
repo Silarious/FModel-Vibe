@@ -111,6 +111,10 @@ public partial class App
         Directory.CreateDirectory(Path.Combine(UserSettings.Default.OutputDirectory, "Logs"));
         Directory.CreateDirectory(Path.Combine(UserSettings.Default.OutputDirectory, ".data"));
 
+        // FMDex lives in the profile export folder (Raw/Properties/Exports), not a separate sticky path.
+        UserSettings.Default.FMDexDirectory = FModel.FMDex.FMDexService.ResolveExportFolder();
+        Directory.CreateDirectory(UserSettings.Default.FMDexDirectory);
+
         const string template = "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level:u3}] {Enriched}: {Message:lj}{NewLine}{Exception}";
         Log.Logger = new LoggerConfiguration()
 #if DEBUG

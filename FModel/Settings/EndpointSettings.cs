@@ -76,6 +76,13 @@ public class EndpointSettings : ViewModel
         IsValid = !string.IsNullOrEmpty(url) && !string.IsNullOrEmpty(path); // be careful with this
     }
 
+    /// <summary>Mark endpoints with Url+Path as valid after profile JSON restore.</summary>
+    public void EnsureConfiguredValidity()
+    {
+        if (!IsValid && !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(Path))
+            IsValid = true;
+    }
+
     public void TryValidate(DynamicApiEndpoint endpoint, EEndpointType type, out JToken response)
     {
         response = null;

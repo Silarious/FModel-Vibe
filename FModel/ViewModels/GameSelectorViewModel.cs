@@ -48,45 +48,115 @@ public class GameSelectorViewModel : ViewModel
 
     public GameSelectorViewModel(string gameDirectory)
     {
-        _detectedDirectories = new ObservableCollection<DirectorySettings>(EnumerateDetectedGames().Where(x => x != null));
-        foreach (var dir in UserSettings.Default.PerDirectory.Values.Where(x => x.IsManual))
-        {
-            _detectedDirectories.Add((DirectorySettings) dir.Clone());
-        }
+        ProfileManager.EnsureLiveDefaults();
+
+        _detectedDirectories = new ObservableCollection<DirectorySettings>();
+        ReloadProfiles(gameDirectory);
 
         DetectedDirectories = new ReadOnlyObservableCollection<DirectorySettings>(_detectedDirectories);
-
-        if (DetectedDirectories.FirstOrDefault(x => x.GameDirectory == gameDirectory) is { } detectedGame)
-            SelectedDirectory = detectedGame;
-        else if (!string.IsNullOrEmpty(gameDirectory))
-            AddUndetectedDir(gameDirectory);
-        else
-            SelectedDirectory = DetectedDirectories.FirstOrDefault();
-
         UeGames = new ReadOnlyObservableCollection<EGame>(new ObservableCollection<EGame>(EnumerateUeGames()));
     }
 
-    public void AddUndetectedDir(string gameDirectory) => AddUndetectedDir(gameDirectory.SubstringAfterLast('\\'), gameDirectory);
-    public void AddUndetectedDir(string gameName, string gameDirectory)
+    /// <summary>Populate the selector from saved profiles only (not Epic/Steam auto-detect names).</summary>
+    public void ReloadProfiles(string preferredGameDirectory = null)
     {
-        if (TryDetectUeVersion(gameDirectory, out var ueVersion, out var newGameDirectory))
+        _detectedDirectories.Clear();
+        foreach (var name in ProfileManager.GetProfileNames())
         {
-            // gameDirectory = newGameDirectory; // directory was changed to point to the correct paks folder
+            if (ProfileManager.TryBuildDirectoryFromProfile(name, out var dir) && dir != null)
+                _detectedDirectories.Add(dir);
         }
 
-        var setting = DirectorySettings.Default(gameName, gameDirectory, true, ueVersion);
-        UserSettings.Default.PerDirectory[gameDirectory] = setting;
-        _detectedDirectories.Add(setting);
-        SelectedDirectory = DetectedDirectories.Last();
+        var preferredProfile = UserSettings.Default.CurrentProfileName;
+        if (!string.IsNullOrWhiteSpace(preferredProfile) &&
+            _detectedDirectories.FirstOrDefault(d =>
+                string.Equals(d.GameName, preferredProfile, StringComparison.OrdinalIgnoreCase)) is { } byProfile)
+        {
+            SelectedDirectory = byProfile;
+        }
+        else if (!string.IsNullOrEmpty(preferredGameDirectory) &&
+                 _detectedDirectories.FirstOrDefault(x =>
+                     string.Equals(x.GameDirectory, preferredGameDirectory, StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(
+                         ProfileManager.CanonicalizeGameDirectory(x.GameDirectory ?? ""),
+                         ProfileManager.CanonicalizeGameDirectory(preferredGameDirectory),
+                         StringComparison.OrdinalIgnoreCase)) is { } byDir)
+        {
+            SelectedDirectory = byDir;
+        }
+        else
+        {
+            SelectedDirectory =
+                _detectedDirectories.FirstOrDefault(d =>
+                    string.Equals(d.GameName, "Fortnite", StringComparison.OrdinalIgnoreCase))
+                ?? _detectedDirectories.FirstOrDefault(d =>
+                    string.Equals(d.GameName, "VALORANT", StringComparison.OrdinalIgnoreCase))
+                ?? _detectedDirectories.FirstOrDefault();
+        }
     }
 
-    private bool TryDetectUeVersion(string gameDirectory, out EGame ueVersion, [MaybeNullWhen(false)] out string newGameDirectory)
+    public void AddUndetectedDir(string gameDirectory) => CreateProfile(gameDirectory.SubstringAfterLast('\\'), gameDirectory);
+    public void AddUndetectedDir(string gameName, string gameDirectory) => CreateProfile(gameName, gameDirectory);
+
+    /// <summary>Add a manual game directory and create a matching named profile.</summary>
+    public void CreateProfile(string gameName, string gameDirectory)
     {
-        var targetGameDir = gameDirectory;
-        if (!targetGameDir.EndsWith("Paks", StringComparison.OrdinalIgnoreCase))
+        // Always canonicalize to …\Content\Paks when found; UE version may still fall back.
+        TryResolveGameDirectory(gameDirectory, out var ueVersion, out var newGameDirectory);
+        if (!string.IsNullOrEmpty(newGameDirectory))
+            gameDirectory = newGameDirectory;
+
+        var setting = DirectorySettings.Fresh(gameName, gameDirectory, ueVersion, manual: true);
+        var profileName = ProfileManager.EnsureFromDirectory(setting);
+        if (!string.IsNullOrWhiteSpace(profileName))
+            setting.GameName = profileName;
+
+        setting.IsManual = true;
+        UserSettings.Default.PerDirectory[ProfileManager.CanonicalizeGameDirectory(gameDirectory)] = setting;
+
+        // Refresh list so we don't duplicate if Ensure rewrote an existing name.
+        ReloadProfiles(setting.GameDirectory);
+        SelectedDirectory = DetectedDirectories.FirstOrDefault(d =>
+            string.Equals(d.GameName, setting.GameName, StringComparison.OrdinalIgnoreCase)) ?? setting;
+    }
+
+    public void DeleteSelectedGame()
+    {
+        var name = ProfileManager.NormalizeProfileName(SelectedDirectory?.GameName);
+        if (SelectedDirectory != null)
+            UserSettings.Default.PerDirectory.Remove(SelectedDirectory.GameDirectory);
+
+        if (!string.IsNullOrWhiteSpace(name) &&
+            !string.Equals(name, "Fortnite", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(name, "VALORANT", StringComparison.OrdinalIgnoreCase))
+        {
+            if (ProfileManager.Exists(name))
+                ProfileManager.Delete(name);
+        }
+
+        ReloadProfiles();
+        SelectedDirectory = DetectedDirectories.LastOrDefault();
+    }
+
+    /// <summary>
+    /// Canonicalize to a Paks folder when possible and sniff UE version from shipping/bootstrap exes.
+    /// Always sets <paramref name="resolvedDirectory"/> (Paks path if found, else the input).
+    /// Returns true when a UE version was detected from an exe / Arc Raiders path heuristic.
+    /// </summary>
+    public static bool TryResolveGameDirectory(
+        string gameDirectory,
+        out EGame ueVersion,
+        [NotNull] out string resolvedDirectory)
+    {
+        var targetGameDir = gameDirectory ?? "";
+        if (!string.IsNullOrEmpty(targetGameDir) &&
+            !targetGameDir.EndsWith("Paks", StringComparison.OrdinalIgnoreCase) &&
+            Directory.Exists(targetGameDir))
         {
             var dirs = Directory.GetDirectories(targetGameDir, "Paks", SearchOption.AllDirectories);
-            var paksDir = dirs.Length == 1 ? dirs[0] : dirs.FirstOrDefault(x => !x.EndsWith("Engine\\Programs\\CrashReportClient\\Content\\Paks"));
+            var paksDir = dirs.Length == 1
+                ? dirs[0]
+                : dirs.FirstOrDefault(x => !x.EndsWith("Engine\\Programs\\CrashReportClient\\Content\\Paks"));
             if (!string.IsNullOrEmpty(paksDir))
             {
                 Log.Warning("Selected directory \"{GameDirectory}\" does not end with \"Paks\". Looking in \"{PaksDir}\" instead.", targetGameDir, paksDir);
@@ -96,28 +166,30 @@ public class GameSelectorViewModel : ViewModel
 
         // Arc Raiders before exe sniffing — shipping/bootstrap exes often report UE4 and mis-tag Tencent/CN.
         var projectDirEarly = Path.Combine(targetGameDir, "..", "..");
-        if (LooksLikeArcRaiders(targetGameDir, projectDirEarly) || LooksLikeArcRaiders(gameDirectory, projectDirEarly))
+        if (LooksLikeArcRaiders(targetGameDir, projectDirEarly) || LooksLikeArcRaiders(gameDirectory ?? "", projectDirEarly))
         {
-            newGameDirectory = targetGameDir;
+            resolvedDirectory = targetGameDir;
             ueVersion = EGame.GAME_ArcRaiders;
             Log.Information("Detected Arc Raiders from PioneerGame / path at \"{Dir}\"", targetGameDir);
             return true;
         }
 
-        if (!gameDirectory.EndsWith("Paks", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrEmpty(gameDirectory) &&
+            !gameDirectory.EndsWith("Paks", StringComparison.OrdinalIgnoreCase) &&
+            Directory.Exists(gameDirectory))
         {
             if (Directory.GetFiles(gameDirectory, "*.exe") is { Length: 1 } exe && TryGetUeVersionFromExe(exe[0], out ueVersion))
             {
                 // we checked the exe in the original directory, the BootstrapPackagedGame one
                 // but we still want c4p to use the paks folder as the game directory (if any), not the original one
-                newGameDirectory = targetGameDir;
+                resolvedDirectory = targetGameDir;
                 Log.Information("Detected UE version {UeVersion} from \"{Exe}\"", ueVersion, exe[0]);
                 return true;
             }
         }
 
         // past this point, we assume targetGameDir is the correct Paks folder
-        newGameDirectory = targetGameDir;
+        resolvedDirectory = targetGameDir;
         var projectDir = Path.Combine(targetGameDir, "..", "..");
 
         var projectBinariesDir = Path.Combine(projectDir, "Binaries", "Win64");
@@ -172,7 +244,7 @@ public class GameSelectorViewModel : ViewModel
         return false;
     }
 
-    private bool TryGetUeVersionFromExe(string exePath, out EGame ueVersion)
+    private static bool TryGetUeVersionFromExe(string exePath, out EGame ueVersion)
     {
         ueVersion = EGame.GAME_UE4_LATEST;
         try
@@ -192,13 +264,6 @@ public class GameSelectorViewModel : ViewModel
         }
     }
 
-    public void DeleteSelectedGame()
-    {
-        UserSettings.Default.PerDirectory.Remove(SelectedDirectory.GameDirectory); // should not be a problem
-        _detectedDirectories.Remove(SelectedDirectory);
-        SelectedDirectory = DetectedDirectories.Last();
-    }
-
     private IEnumerable<EGame> EnumerateUeGames()
         => Enum.GetValues<EGame>()
             .GroupBy(value => (int)value)
@@ -206,18 +271,32 @@ public class GameSelectorViewModel : ViewModel
             .OrderBy(value => ((int)value & 0xFF) == 0);
     private IEnumerable<DirectorySettings> EnumerateDetectedGames()
     {
-        yield return GetUnrealEngineGame("Fortnite", "\\FortniteGame\\Content\\Paks", EGame.GAME_UE5_8);
-        yield return DirectorySettings.Default("Fortnite [LIVE]", Constants._FN_LIVE_TRIGGER, ue: EGame.GAME_UE5_8);
-        yield return GetUnrealEngineGame("Pewee", "\\RogueCompany\\Content\\Paks", EGame.GAME_RogueCompany);
-        yield return GetUnrealEngineGame("Rosemallow", "\\Indiana\\Content\\Paks", EGame.GAME_UE4_21);
-        yield return GetUnrealEngineGame("Catnip", "\\OakGame\\Content\\Paks", EGame.GAME_Borderlands3);
-        yield return GetUnrealEngineGame("AzaleaAlpha", "\\Prospect\\Content\\Paks", EGame.GAME_UE4_27);
-        yield return GetUnrealEngineGame("shoebill", "\\SwGame\\Content\\Paks", EGame.GAME_StarWarsJediFallenOrder);
-        yield return GetUnrealEngineGame("Snoek", "\\StateOfDecay2\\Content\\Paks", EGame.GAME_StateOfDecay2);
-        yield return GetUnrealEngineGame("711c5e95dc094ca58e5f16bd48e751d6", "\\MultiVersus\\Content\\Paks", EGame.GAME_UE4_26);
-        yield return GetUnrealEngineGame("9361c8c6d2f34b42b5f2f61093eedf48", "\\TslGame\\Content\\Paks", EGame.GAME_PlayerUnknownsBattlegrounds);
-        yield return GetRiotGame("VALORANT", "ShooterGame\\Content\\Paks", EGame.GAME_Valorant);
-        yield return DirectorySettings.Default("VALORANT [LIVE]", Constants._VAL_LIVE_TRIGGER, ue: EGame.GAME_Valorant);
+        // Fortnite LIVE is the default Fortnite profile (streamed manifests).
+        yield return DirectorySettings.Fresh("Fortnite", Constants._FN_LIVE_TRIGGER, EGame.GAME_UE5_8);
+        var fortniteInstalled = GetUnrealEngineGame("Fortnite", "Fortnite (Installed)", "\\FortniteGame\\Content\\Paks", EGame.GAME_UE5_8);
+        if (fortniteInstalled != null)
+        {
+            yield return fortniteInstalled;
+        }
+
+        yield return GetUnrealEngineGame("Pewee", "Rogue Company", "\\RogueCompany\\Content\\Paks", EGame.GAME_RogueCompany);
+        yield return GetUnrealEngineGame("Rosemallow", "The Outer Worlds", "\\Indiana\\Content\\Paks", EGame.GAME_UE4_21);
+        yield return GetUnrealEngineGame("Catnip", "Borderlands 3", "\\OakGame\\Content\\Paks", EGame.GAME_Borderlands3);
+        yield return GetUnrealEngineGame("AzaleaAlpha", "The Cycle", "\\Prospect\\Content\\Paks", EGame.GAME_UE4_27);
+        yield return GetUnrealEngineGame("shoebill", "Star Wars Jedi Fallen Order", "\\SwGame\\Content\\Paks", EGame.GAME_StarWarsJediFallenOrder);
+        yield return GetUnrealEngineGame("Snoek", "State Of Decay 2", "\\StateOfDecay2\\Content\\Paks", EGame.GAME_StateOfDecay2);
+        yield return GetUnrealEngineGame("711c5e95dc094ca58e5f16bd48e751d6", "MultiVersus", "\\MultiVersus\\Content\\Paks", EGame.GAME_UE4_26);
+        yield return GetUnrealEngineGame("9361c8c6d2f34b42b5f2f61093eedf48", "PLAYERUNKNOWN'S BATTLEGROUNDS", "\\TslGame\\Content\\Paks", EGame.GAME_PlayerUnknownsBattlegrounds);
+
+        // VALORANT LIVE is the default Valorant profile.
+        yield return DirectorySettings.Fresh("VALORANT", Constants._VAL_LIVE_TRIGGER, EGame.GAME_Valorant);
+        var valorantInstalled = GetRiotGame("VALORANT", "ShooterGame\\Content\\Paks", EGame.GAME_Valorant);
+        if (valorantInstalled != null)
+        {
+            valorantInstalled.GameName = "VALORANT (Installed)";
+            yield return valorantInstalled;
+        }
+
         yield return GetSteamGame(381210, "\\DeadByDaylight\\Content\\Paks", EGame.GAME_DeadByDaylight, aesKey: "0x22b1639b548124925cf7b9cbaa09f9ac295fcf0324586d6b37ee1d42670b39b3"); // Dead By Daylight
         yield return GetSteamGame(578080, "\\TslGame\\Content\\Paks", EGame.GAME_PlayerUnknownsBattlegrounds); // PUBG
         yield return GetSteamGame(1172380, "\\SwGame\\Content\\Paks", EGame.GAME_StarWarsJediFallenOrder); // STAR WARS Jedi: Fallen Order™
@@ -231,7 +310,9 @@ public class GameSelectorViewModel : ViewModel
     }
 
     private LauncherInstalled _launcherInstalled;
-    private DirectorySettings GetUnrealEngineGame(string gameName, string pakDirectory, EGame ueVersion)
+    /// <param name="epicAppName">AppName key in Epic LauncherInstalled.dat.</param>
+    /// <param name="profileName">Friendly profile / selector label (not the Epic codename).</param>
+    private DirectorySettings GetUnrealEngineGame(string epicAppName, string profileName, string pakDirectory, EGame ueVersion)
     {
         _launcherInstalled ??= GetDriveLauncherInstalls<LauncherInstalled>("ProgramData\\Epic\\UnrealEngineLauncher\\LauncherInstalled.dat");
         if (_launcherInstalled?.InstallationList != null)
@@ -239,10 +320,10 @@ public class GameSelectorViewModel : ViewModel
             foreach (var installationList in _launcherInstalled.InstallationList)
             {
                 var gameDir = $"{installationList.InstallLocation}{pakDirectory}";
-                if (installationList.AppName.Equals(gameName, StringComparison.OrdinalIgnoreCase) && Directory.Exists(gameDir))
+                if (installationList.AppName.Equals(epicAppName, StringComparison.OrdinalIgnoreCase) && Directory.Exists(gameDir))
                 {
-                    Log.Debug("Found {GameName} in LauncherInstalled.dat", gameName);
-                    return DirectorySettings.Default(installationList.AppName, gameDir, ue: ueVersion);
+                    Log.Debug("Found {GameName} in LauncherInstalled.dat", profileName);
+                    return DirectorySettings.Default(profileName, gameDir, ue: ueVersion);
                 }
             }
         }

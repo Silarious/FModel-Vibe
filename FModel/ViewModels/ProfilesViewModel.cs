@@ -62,6 +62,8 @@ public class ProfilesViewModel : ViewModel
 
     public void Refresh()
     {
+        ProfileManager.EnsureLiveDefaults();
+
         ProfileNames.Clear();
         foreach (var name in ProfileManager.GetProfileNames())
             ProfileNames.Add(name);

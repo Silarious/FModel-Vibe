@@ -115,12 +115,24 @@ public partial class MainWindow
                 break;
         }
 
+        // LIVE profiles with AesReload=Never still need a key; pull once when missing.
+        var liveDir = UserSettings.Default.CurrentDir?.GameDirectory ?? "";
+        if (ProfileManager.IsLiveTrigger(liveDir))
+        {
+            var mainKey = Helper.FixKey(UserSettings.Default.CurrentDir?.AesKeys?.MainKey);
+            if (mainKey.Length != 66)
+                await _applicationView.CUE4Parse.RefreshAes();
+        }
+
         await Task.WhenAll(
             ApplicationViewModel.InitOodle(),
             ApplicationViewModel.InitZlib()
         );
 
         await _applicationView.CUE4Parse.Initialize();
+        // Archive GameDirectory.Add uses BeginInvoke; drain the UI queue so InitAes
+        // sees a complete list (avoids races / missing dynamic AES guids).
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
         await _applicationView.AesManager.InitAes();
         await _applicationView.UpdateProvider(true);
 #if !DEBUG
@@ -200,20 +212,6 @@ public partial class MainWindow
     {
         var searchView = Helper.GetWindow<SearchView>("Search For Packages", () => new SearchView().Show());
         searchView.FocusTab(ESearchViewTab.SearchView);
-    }
-
-    private void OnSaveCurrentSettingsAsProfile(object sender, RoutedEventArgs e)
-    {
-        var dialog = new ProfileNameDialog("Save Current Settings as New Profile");
-        if (!dialog.ShowDialog().GetValueOrDefault()) return;
-
-        ProfileManager.SaveCurrentAs(dialog.ProfileName);
-        ApplicationService.ApplicationView.ProfilesView.Refresh();
-    }
-
-    private void OnLoadSelectedProfile(object sender, RoutedEventArgs e)
-    {
-        ApplicationService.ApplicationView.ProfilesView.LoadSelected();
     }
 
     private void OnRefViewClick(object sender, RoutedEventArgs e)

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Data;
 using CUE4Parse.UE4.Objects.Core.Misc;
 using FModel.Framework;
@@ -36,7 +37,7 @@ public class AesManagerViewModel : ViewModel
         {
             _keysFromSettings = UserSettings.Default.CurrentDir.AesKeys;
             _mainKey.Key = Helper.FixKey(_keysFromSettings.MainKey);
-            AesKeys = new FullyObservableCollection<FileItem>(EnumerateAesKeys());
+            AesKeys = new FullyObservableCollection<FileItem>(EnumerateAesKeysSnapshot());
             AesKeys.ItemPropertyChanged += AesKeysOnItemPropertyChanged;
             AesKeysView = new ListCollectionView(AesKeys) { SortDescriptions = { new SortDescription("Name", ListSortDirection.Ascending) } };
         });
@@ -123,13 +124,25 @@ public class AesManagerViewModel : ViewModel
         return true;
     }
 
-    private IEnumerable<FileItem> EnumerateAesKeys()
+    /// <summary>
+    /// Snapshot archive list on the UI thread so parallel RegisterVfs BeginInvoke Adds
+    /// cannot throw "Collection was modified" while we build the AES manager list.
+    /// </summary>
+    private List<FileItem> EnumerateAesKeysSnapshot()
     {
-        yield return _mainKey;
+        var list = new List<FileItem> { _mainKey };
         _uniqueGuids = new HashSet<FGuid> { Constants.ZERO_GUID };
 
+        var directoryFiles = _cue4Parse.GameDirectory.DirectoryFiles;
+        FileItem[] files;
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess())
+            files = dispatcher.Invoke(() => directoryFiles.ToArray());
+        else
+            files = directoryFiles.ToArray();
+
         var hasDynamicKeys = _keysFromSettings.HasDynamicKeys;
-        foreach (var file in _cue4Parse.GameDirectory.DirectoryFiles)
+        foreach (var file in files)
         {
             if (file.Guid == Constants.ZERO_GUID || !_uniqueGuids.Add(file.Guid))
                 continue;
@@ -141,7 +154,9 @@ public class AesManagerViewModel : ViewModel
             }
 
             file.Key = Helper.FixKey(k);
-            yield return file;
+            list.Add(file);
         }
+
+        return list;
     }
 }

@@ -54,6 +54,8 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -321,8 +323,20 @@
                               IsChecked="{Binding AutoLoadAllFilesOnStartup, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
                               Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
-                    <TextBlock Grid.Row="29" Grid.Column="0" Text="Convert uint64 to Float" VerticalAlignment="Center" Margin="0 5 0 10" ToolTip="When saving properties/json, detect integers that are actually a bit-cast double (an 8-byte float stored as a uint64) and replace them with the readable float value" />
+                    <TextBlock Grid.Row="29" Grid.Column="0" Text="Auto Load Fortnite LIVE on Startup" VerticalAlignment="Center" Margin="0 5 0 10"
+                               ToolTip="When using the Fortnite LIVE profile, download/register CDN archives on launch. Off by default — use Directory → Load Fortnite LIVE… instead." />
                     <CheckBox Grid.Row="29" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                              IsChecked="{Binding AutoLoadFortniteLiveOnStartup, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+
+                    <TextBlock Grid.Row="30" Grid.Column="0" Text="Fortnite LIVE Include UEFN" VerticalAlignment="Center" Margin="0 5 0 10"
+                               ToolTip="Also register Fortnite Creative/UEFN archives when using fortnite-live.manifest. Off by default — roughly doubles LIVE startup time." />
+                    <CheckBox Grid.Row="30" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                              IsChecked="{Binding FortniteLiveIncludeUefn, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+
+                    <TextBlock Grid.Row="31" Grid.Column="0" Text="Convert uint64 to Float" VerticalAlignment="Center" Margin="0 5 0 10" ToolTip="When saving properties/json, detect integers that are actually a bit-cast double (an 8-byte float stored as a uint64) and replace them with the readable float value" />
+                    <CheckBox Grid.Row="31" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
                               IsChecked="{Binding ConvertUint64ToFloat, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
                               Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
@@ -715,6 +729,76 @@
                               Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" Margin="0 5 0 5"/>
                 </Grid>
             </DataTemplate>
+            <DataTemplate x:Key="FMDexTemplate">
+                <Grid adonisExtensions:LayerExtension.Layer="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="5" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="5" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="7" TextWrapping="Wrap" Margin="0 0 0 10"
+                               Text="FMDex indexes packages → UE class tags (*_FMDex.json.br, Brotli-11 flatUnique). Share one file per game/build; new packages are appended as you open them."
+                               Opacity="0.85" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="FMDex Directory" VerticalAlignment="Center" Margin="0 0 0 5"
+                               ToolTip="Always {FModel install}/FMDex/{Profile}. Does not follow Raw Data or another profile's Output folder." />
+                    <TextBox Grid.Row="1" Grid.Column="2" IsReadOnly="True"
+                             Text="{Binding FMDexDirectory, Source={x:Static local:Settings.UserSettings.Default}, Mode=OneWay}" Margin="0 0 0 5" />
+                    <Button Grid.Row="1" Grid.Column="4" Content="Sync" HorizontalAlignment="Right" Click="OnBrowseFMDexDirectory" Margin="0 0 0 5"
+                            ToolTip="Refresh from {install}/FMDex/{current profile}" />
+                    <Button Grid.Row="1" Grid.Column="6" Content="Open" HorizontalAlignment="Right" Click="OnOpenFMDexFolder" Margin="0 0 0 5"
+                            ToolTip="Open the FMDex folder in Explorer" />
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Active FMDex File" VerticalAlignment="Center" Margin="0 0 0 5"
+                               ToolTip="Preferred: *_FMDex.json.br (Brotli). Plain *_FMDex.json and legacy *_FDex.* still load and migrate on save." />
+                    <TextBox Grid.Row="2" Grid.Column="2"
+                             Text="{Binding FMDexActiveFile, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0 0 0 5" />
+                    <Button Grid.Row="2" Grid.Column="4" Grid.ColumnSpan="3" Content="Browse..." HorizontalAlignment="Right" Click="OnBrowseFMDexFile" Margin="0 0 0 5" />
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Game" VerticalAlignment="Center" Margin="0 0 0 5"
+                               ToolTip="Written into the FMDex JSON as &quot;game&quot; (e.g. PioneerGame). Auto-filled from the mounted project when blank." />
+                    <TextBox Grid.Row="3" Grid.Column="2"
+                             Text="{Binding FMDexGame, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0 0 0 5" />
+
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Build" VerticalAlignment="Center" Margin="0 0 0 5"
+                               ToolTip="Written into the FMDex JSON as &quot;build&quot;. Prefer identifier from PioneerGame/BuildInfo/manifest.json (e.g. CL1299607-…-BK4338)." />
+                    <TextBox Grid.Row="4" Grid.Column="2"
+                             Text="{Binding FMDexBuild, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0 0 0 5" />
+                    <Button Grid.Row="4" Grid.Column="4" Grid.ColumnSpan="3" Content="Detect from Manifest" HorizontalAlignment="Right"
+                            Click="OnDetectFMDexManifest" Margin="0 0 0 5"
+                            ToolTip="Read {Project}/BuildInfo/manifest.json from mounted files and overwrite Game/Build" />
+
+                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Auto-Index on Load" VerticalAlignment="Center" Margin="0 5 0 5"
+                               ToolTip="When you open an unindexed package, append its export class tags to the active FMDex" />
+                    <CheckBox Grid.Row="5" Grid.Column="2" Grid.ColumnSpan="5" Margin="0 5 0 5"
+                              Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                              IsChecked="{Binding AutoIndexUnindexedOnLoad, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}"
+                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+
+                    <TextBlock Grid.Row="6" Grid.Column="0" Text="Max Index Threads" VerticalAlignment="Center" Margin="0 5 0 5"
+                               ToolTip="Parallel workers for Index Folder / Index Selected. 0 = auto (~4× CPU cores, min 32) — indexing is mostly disk/Theia wait, so oversubscription helps. Try 64–128 if CPU stays idle." />
+                    <TextBox Grid.Row="6" Grid.Column="2" Width="80" HorizontalAlignment="Left" Margin="0 5 0 5"
+                             Text="{Binding FMDexMaxThreads, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="7" Margin="0 10 0 0" FontStyle="Italic" Opacity="0.7"
+                               Text="Search aliases: model/mesh, tex, mat, anim, sound, bp, fx, ui, data… (index stores full class names). Blank Game/Build auto-fill from BuildInfo/manifest.json when indexing." />
+                </Grid>
+            </DataTemplate>
             <DataTemplate x:Key="KeybindingsTemplate">
                 <Grid adonisExtensions:LayerExtension.Layer="2">
                     <Grid.RowDefinitions>
@@ -1004,6 +1088,18 @@
                             </Canvas>
                         </Viewbox>
                         <TextBlock Text="Models" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                    </StackPanel>
+                </TreeViewItem.Header>
+            </TreeViewItem>
+            <TreeViewItem Tag="FMDexTemplate">
+                <TreeViewItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <Viewbox Width="16" Height="16" HorizontalAlignment="Center" Margin="-20 4 7.5 4">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.AccentForegroundBrush}}" Data="{StaticResource SearchIcon}" />
+                            </Canvas>
+                        </Viewbox>
+                        <TextBlock Text="FMDex" HorizontalAlignment="Left" VerticalAlignment="Center" />
                     </StackPanel>
                 </TreeViewItem.Header>
             </TreeViewItem>

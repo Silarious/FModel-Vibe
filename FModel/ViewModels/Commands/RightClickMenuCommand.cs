@@ -57,6 +57,22 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
         if (folders.Length == 0 && assets.Length == 0)
             return;
 
+        if (trigger is "Index_FMDex")
+        {
+            await _threadWorkerView.Begin(cancellationToken =>
+            {
+                foreach (var folder in folders)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    contextViewModel.CUE4Parse.IndexFolderForFMDex(cancellationToken, folder);
+                }
+
+                if (assets.Length > 0)
+                    contextViewModel.CUE4Parse.IndexAssetsForFMDex(cancellationToken, assets);
+            });
+            return;
+        }
+
         var assetsGroups = assets.GroupBy(static gf => gf.Directory);
         var (action, showtype, bulktype) = trigger switch
         {

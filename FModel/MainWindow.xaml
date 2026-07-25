@@ -58,7 +58,7 @@
 
             <Menu Grid.Column="0">
                 <MenuItem Header="Directory">
-                    <MenuItem Header="Selector" Command="{Binding MenuCommand}" CommandParameter="Directory_Selector">
+                    <MenuItem Header="Profile Selector" Command="{Binding MenuCommand}" CommandParameter="Directory_Selector">
                         <MenuItem.Icon>
                             <Viewbox Width="16" Height="16">
                                 <Canvas Width="24" Height="24">
@@ -90,6 +90,39 @@
                             <Viewbox Width="16" Height="16">
                                 <Canvas Width="24" Height="24">
                                     <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.ForegroundBrush}}" Data="{StaticResource InfoIcon}" />
+                                </Canvas>
+                            </Viewbox>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Index Archive in FMDex" Command="{Binding MenuCommand}" CommandParameter="Directory_IndexFMDex"
+                              IsEnabled="{Binding Status.IsReady}"
+                              ToolTip="Index every UE package in the mounted archives into the active FMDex (skips already indexed)">
+                        <MenuItem.Icon>
+                            <Viewbox Width="16" Height="16">
+                                <Canvas Width="24" Height="24">
+                                    <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.ForegroundBrush}}" Data="{StaticResource SearchIcon}" />
+                                </Canvas>
+                            </Viewbox>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Load Fortnite LIVE…" Command="{Binding MenuCommand}" CommandParameter="Directory_LoadFortniteLive"
+                              IsEnabled="{Binding Status.IsReady}"
+                              ToolTip="Download and register Fortnite LIVE CDN archives for the current LIVE profile (skipped on startup unless Settings → Auto Load Fortnite LIVE on Startup is on)">
+                        <MenuItem.Icon>
+                            <Viewbox Width="16" Height="16">
+                                <Canvas Width="24" Height="24">
+                                    <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.ForegroundBrush}}" Data="{StaticResource BackupIcon}" />
+                                </Canvas>
+                            </Viewbox>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Save LIVE Archives to Disk…" Command="{Binding MenuCommand}" CommandParameter="Directory_CacheLiveArchives"
+                              IsEnabled="{Binding Status.IsReady}"
+                              ToolTip="After Fortnite LIVE loads, download/copy pak+utoc+ucas into a local folder and create a Fortnite (Cached) profile for fast startups">
+                        <MenuItem.Icon>
+                            <Viewbox Width="16" Height="16">
+                                <Canvas Width="24" Height="24">
+                                    <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.ForegroundBrush}}" Data="{StaticResource BackupIcon}" />
                                 </Canvas>
                             </Viewbox>
                         </MenuItem.Icon>
@@ -128,6 +161,17 @@
                             <Viewbox Width="16" Height="16">
                                 <Canvas Width="24" Height="24">
                                     <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.ForegroundBrush}}" Data="{StaticResource DirectoriesIcon}" />
+                                </Canvas>
+                            </Viewbox>
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Index Selected Folder in FMDex" Command="{Binding MenuCommand}" CommandParameter="Packages_IndexFMDex"
+                              IsEnabled="{Binding Status.IsReady}"
+                              ToolTip="Scan the folder selected in Assets Explorer and append class tags to the active FMDex">
+                        <MenuItem.Icon>
+                            <Viewbox Width="16" Height="16">
+                                <Canvas Width="24" Height="24">
+                                    <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.ForegroundBrush}}" Data="{StaticResource SearchIcon}" />
                                 </Canvas>
                             </Viewbox>
                         </MenuItem.Icon>
@@ -196,41 +240,6 @@
                             </Canvas>
                         </Viewbox>
                     </MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Profiles">
-                    <MenuItem.Icon>
-                        <Viewbox Width="16" Height="16">
-                            <Canvas Width="24" Height="24">
-                                <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.AccentForegroundBrush}}" Data="{StaticResource SaveIcon}" />
-                            </Canvas>
-                        </Viewbox>
-                    </MenuItem.Icon>
-                    <ComboBox MinWidth="200" Margin="4"
-                              ItemsSource="{Binding ProfilesView.ProfileNames}"
-                              SelectedItem="{Binding ProfilesView.SelectedProfile, Mode=TwoWay}"
-                              adonisExtensions:WatermarkExtension.Watermark="No profiles saved yet"
-                              ToolTip="Select a profile to preview. Use Load Selected Profile to apply it." />
-                    <MenuItem Header="Load Selected Profile" Click="OnLoadSelectedProfile"
-                              IsEnabled="{Binding ProfilesView.CanLoad}" />
-                    <Separator />
-                    <MenuItem Header="Save Current Settings as New Profile..." Click="OnSaveCurrentSettingsAsProfile">
-                        <MenuItem.Icon>
-                            <Viewbox Width="16" Height="16">
-                                <Canvas Width="24" Height="24">
-                                    <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.AccentForegroundBrush}}" Data="{StaticResource AddIcon}" />
-                                </Canvas>
-                            </Viewbox>
-                        </MenuItem.Icon>
-                    </MenuItem>
-                    <MenuItem Header="Manage Profiles..." Command="{Binding MenuCommand}" CommandParameter="Settings">
-                        <MenuItem.Icon>
-                            <Viewbox Width="16" Height="16">
-                                <Canvas Width="24" Height="24">
-                                    <Path Fill="{DynamicResource {x:Static adonisUi:Brushes.AccentForegroundBrush}}" Data="{StaticResource ConfigIcon}" />
-                                </Canvas>
-                            </Viewbox>
-                        </MenuItem.Icon>
-                    </MenuItem>
                 </MenuItem>
                 <MenuItem Header="Help" >
                     <MenuItem Header="Donate" Command="{Binding MenuCommand}" CommandParameter="Help_Donate">

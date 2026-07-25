@@ -142,40 +142,82 @@ public class ApplicationViewModel : ViewModel
 
     public DirectorySettings AvoidEmptyGameDirectory(bool bAlreadyLaunched)
     {
-        var gameDirectory = UserSettings.Default.GameDirectory;
-        if (!bAlreadyLaunched && !string.IsNullOrWhiteSpace(gameDirectory))
+        ProfileManager.EnsureLiveDefaults();
+
+        // Prefer the named profile on cold start so AppSettings.GameDirectory can't stick us on another game.
+        if (!bAlreadyLaunched)
         {
-            if (ProfileManager.TryGetPerDirectory(gameDirectory, out var currentDir))
+            var profileName = UserSettings.Default.CurrentProfileName;
+            if (!string.IsNullOrWhiteSpace(profileName) && ProfileManager.Exists(profileName))
             {
-                // Ensure key + property stay aligned for the next save/restart.
+                if (ProfileManager.Load(profileName) && UserSettings.Default.CurrentDir != null)
+                {
+                    foreach (var ep in UserSettings.Default.CurrentDir.Endpoints ?? [])
+                        ep.EnsureConfiguredValidity();
+                    return UserSettings.Default.CurrentDir;
+                }
+            }
+
+            var gameDirectory = ProfileManager.CanonicalizeGameDirectory(UserSettings.Default.GameDirectory ?? "");
+            if (!string.IsNullOrWhiteSpace(gameDirectory) &&
+                ProfileManager.TryGetPerDirectory(gameDirectory, out var currentDir))
+            {
                 ProfileManager.SetPerDirectory(gameDirectory, currentDir);
-                UserSettings.Default.GameDirectory = currentDir.GameDirectory;
+                UserSettings.Default.GameDirectory = ProfileManager.CanonicalizeGameDirectory(currentDir.GameDirectory ?? gameDirectory);
+                currentDir.GameDirectory = UserSettings.Default.GameDirectory;
+                foreach (var ep in currentDir.Endpoints ?? [])
+                    ep.EnsureConfiguredValidity();
                 return currentDir;
             }
         }
 
+        var previousProfile = UserSettings.Default.CurrentProfileName;
+        var previousDir = ProfileManager.CanonicalizeGameDirectory(
+            UserSettings.Default.CurrentDir?.GameDirectory ?? UserSettings.Default.GameDirectory ?? "");
+
         Status.SetStatus(EStatusKind.Configuring);
-        var gameLauncherViewModel = new GameSelectorViewModel(gameDirectory);
+        var gameLauncherViewModel = new GameSelectorViewModel(previousDir);
         var result = new DirectorySelector(gameLauncherViewModel).ShowDialog();
         Status.SetStatus(EStatusKind.Ready);
         if (!result.HasValue || !result.Value) return null;
 
-        UserSettings.Default.GameDirectory = gameLauncherViewModel.SelectedDirectory.GameDirectory;
-        if (!bAlreadyLaunched || UserSettings.Default.CurrentDir.Equals(gameLauncherViewModel.SelectedDirectory))
-            return gameLauncherViewModel.SelectedDirectory;
+        var selected = gameLauncherViewModel.SelectedDirectory;
+        if (selected == null) return null;
 
-        // UserSettings.Save(); // ??? change key then change game, key saved correctly what?
-        UserSettings.Default.CurrentDir = gameLauncherViewModel.SelectedDirectory;
-        RestartWithWarning();
-        return null;
+        var selectedProfile = ProfileManager.EnsureFromDirectory(selected);
+        if (string.IsNullOrWhiteSpace(selectedProfile))
+            selectedProfile = ProfileManager.NormalizeProfileName(selected.GameName);
+
+        if (string.IsNullOrWhiteSpace(selectedProfile))
+            return null;
+
+        // Always Load so export dirs / endpoints / LIVE tokens apply from the profile file.
+        ProfileManager.Load(selectedProfile);
+        ProfilesView?.Refresh();
+
+        var newDir = ProfileManager.CanonicalizeGameDirectory(
+            UserSettings.Default.CurrentDir?.GameDirectory ?? UserSettings.Default.GameDirectory ?? "");
+        var providerMustRebuild = bAlreadyLaunched && (
+            !string.Equals(previousProfile, selectedProfile, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(previousDir, newDir, StringComparison.OrdinalIgnoreCase) ||
+            // Empty previous profile name used to skip restart → Fortnite "Ready" with no streamed paks.
+            string.IsNullOrWhiteSpace(previousProfile));
+
+        if (providerMustRebuild)
+        {
+            RestartWithWarning();
+            return null;
+        }
+
+        return UserSettings.Default.CurrentDir;
     }
 
     public DirectorySettings AddGameDirectory(string directory)
     {
         if (Status.Kind is EStatusKind.Configuring)
         {
-            var directorySelector = Helper.GetWindow<DirectorySelector>("Directory Selector", null);
-            directorySelector.AddManualGame(directory);
+            var directorySelector = Helper.GetWindow<DirectorySelector>("Profile Selector", null);
+            directorySelector?.AddManualGame(directory);
             return null;
         }
         else
@@ -189,13 +231,30 @@ public class ApplicationViewModel : ViewModel
             if (!result.HasValue || !result.Value)
                 return null;
 
-            UserSettings.Default.GameDirectory = gameLauncherViewModel.SelectedDirectory.GameDirectory;
-            if (UserSettings.Default.CurrentDir.Equals(gameLauncherViewModel.SelectedDirectory))
-                return gameLauncherViewModel.SelectedDirectory;
+            var selected = gameLauncherViewModel.SelectedDirectory;
+            if (selected == null) return null;
 
-            UserSettings.Default.CurrentDir = gameLauncherViewModel.SelectedDirectory;
-            RestartWithWarning();
-            return null;
+            var previousProfile = UserSettings.Default.CurrentProfileName;
+            var previousDir = ProfileManager.CanonicalizeGameDirectory(
+                UserSettings.Default.CurrentDir?.GameDirectory ?? UserSettings.Default.GameDirectory ?? "");
+
+            var profileName = ProfileManager.EnsureFromDirectory(selected);
+            if (!string.IsNullOrWhiteSpace(profileName))
+                ProfileManager.Load(profileName);
+
+            ProfilesView?.Refresh();
+
+            var newDir = ProfileManager.CanonicalizeGameDirectory(
+                UserSettings.Default.CurrentDir?.GameDirectory ?? selected.GameDirectory ?? "");
+            if (!string.Equals(previousProfile, profileName, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(previousDir, newDir, StringComparison.OrdinalIgnoreCase) ||
+                string.IsNullOrWhiteSpace(previousProfile))
+            {
+                RestartWithWarning();
+                return null;
+            }
+
+            return UserSettings.Default.CurrentDir ?? selected;
         }
     }
 
@@ -260,12 +319,20 @@ public class ApplicationViewModel : ViewModel
         CUE4Parse.ClearProvider();
         await ApplicationService.ThreadWorkerView.Begin(cancellationToken =>
         {
+            // InitAes can race archive registration; don't NullRef if it failed earlier.
+            var aesKeys = AesManager.AesKeys;
+            if (aesKeys == null)
+            {
+                Log.Warning("UpdateProvider skipped: AES key list is not initialized yet");
+                return;
+            }
+
             // TODO: refactor after release, select updated keys only
-            var aes = AesManager.AesKeys.Select(x =>
+            var aes = aesKeys.Select(x =>
             {
                 cancellationToken.ThrowIfCancellationRequested(); // cancel if needed
 
-                var k = x.Key.Trim();
+                var k = x.Key?.Trim() ?? string.Empty;
                 if (k.Length != 66) k = Constants.ZERO_64_CHAR;
                 return new KeyValuePair<FGuid, FAesKey>(x.Guid, new FAesKey(k));
             });

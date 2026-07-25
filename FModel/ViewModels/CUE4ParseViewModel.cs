@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Runtime;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -19,6 +20,7 @@ using CUE4Parse.FileProvider.Objects;
 using CUE4Parse.FileProvider.Vfs;
 using CUE4Parse.GameTypes.Aion2.Objects;
 using CUE4Parse.GameTypes.AoC.Objects;
+using CUE4Parse.GameTypes.ArcRaiders.Encryption.Theia;
 using CUE4Parse.GameTypes.AshEchoes.FileProvider;
 using CUE4Parse.GameTypes.Borderlands3.Assets.Exports;
 using CUE4Parse.GameTypes.Borderlands4.Assets.Exports;
@@ -51,6 +53,7 @@ using CUE4Parse.UE4.CriWare.Readers;
 using CUE4Parse.UE4.FMod;
 using CUE4Parse.UE4.GameFeatures;
 using CUE4Parse.UE4.IO;
+using CUE4Parse.UE4.IO.Objects;
 using CUE4Parse.UE4.Localization;
 using CUE4Parse.UE4.Lua.unluac;
 using CUE4Parse.UE4.Objects.Core.Serialization;
@@ -58,6 +61,7 @@ using CUE4Parse.UE4.Objects.Engine;
 using CUE4Parse.UE4.Objects.UObject;
 using CUE4Parse.UE4.Objects.UObject.Editor;
 using CUE4Parse.UE4.Oodle.Objects;
+using CUE4Parse.UE4.Pak.Objects;
 using CUE4Parse.UE4.Readers;
 using CUE4Parse.UE4.Shaders;
 using CUE4Parse.UE4.Versions;
@@ -71,6 +75,7 @@ using EpicManifestParser;
 using EpicManifestParser.UE;
 using FModel.Creator;
 using FModel.Extensions;
+using FModel.FMDex;
 using FModel.Framework;
 using FModel.Services;
 using FModel.Settings;
@@ -98,7 +103,21 @@ public class CUE4ParseViewModel : ViewModel
     private readonly Regex _fnLiveRegex = new(@"^FortniteGame[/\\]Content[/\\]Paks[/\\]",
         RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    private static readonly HttpClient _chunkClient = ManifestParseOptions.CreateDefaultClient();
+    private static readonly HttpClient _chunkClient = CreateChunkClient();
+
+    /// <summary>Last Fortnite LIVE build manifest (for "Save LIVE Archives to Disk").</summary>
+    private FBuildPatchAppManifest _fortniteLiveManifest;
+
+    private static HttpClient CreateChunkClient()
+    {
+        var client = ManifestParseOptions.CreateDefaultClient();
+        // CreateDefaultClient often uses InfiniteTimeSpan — a bad CDN mirror then hangs forever.
+        if (client.Timeout == Timeout.InfiniteTimeSpan || client.Timeout > TimeSpan.FromMinutes(3))
+            client.Timeout = TimeSpan.FromMinutes(2);
+        return client;
+    }
+
+    public bool HasFortniteLiveManifest => _fortniteLiveManifest != null;
 
     private bool _modelIsOverwritingMaterial;
     public bool ModelIsOverwritingMaterial
@@ -171,7 +190,13 @@ public class CUE4ParseViewModel : ViewModel
     {
         var currentDir = UserSettings.Default.CurrentDir
             ?? throw new InvalidOperationException("CurrentDir is not set");
-        var gameDirectory = currentDir.GameDirectory ?? "";
+        // LIVE triggers must stay opaque tokens (never Path.GetFullPath → …\publish\valorant-live.manifest).
+        var gameDirectory = ProfileManager.CanonicalizeGameDirectory(currentDir.GameDirectory ?? "");
+        if (!string.Equals(currentDir.GameDirectory, gameDirectory, StringComparison.Ordinal))
+            currentDir.GameDirectory = gameDirectory;
+        if (!string.Equals(UserSettings.Default.GameDirectory, gameDirectory, StringComparison.Ordinal))
+            UserSettings.Default.GameDirectory = gameDirectory;
+
         var versioning = currentDir.Versioning ?? new VersioningSettings();
         var versionContainer = new VersionContainer(
             game: currentDir.UeVersion, platform: currentDir.TexturePlatform,
@@ -213,7 +238,9 @@ public class CUE4ParseViewModel : ViewModel
                     _ when versionContainer.Game is EGame.GAME_AshEchoes => new AEDefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer),
                     _ when versionContainer.Game is EGame.GAME_BlackStigma => new DefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, StringComparer.Ordinal),
                     _ when versionContainer.Game is EGame.GAME_HonorofKingsWorld => new HoKWDefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer),
-                    _ when versionContainer.Game is EGame.GAME_ArcRaiders => CreateArcRaidersProvider(gameDirectory, versionContainer, pathComparer),
+                    // Arc Raiders UE enum OR any folder with Theia metadat0 siblings (e.g. Marvel Tokon / MTFS).
+                    _ when versionContainer.Game is EGame.GAME_ArcRaiders || TheiaPakDecryptor.DirectoryHasTheiaMeta(gameDirectory)
+                        => CreateTheiaAwareProvider(gameDirectory, versionContainer, pathComparer),
                     _ => CreateDefaultProviderMaybeWarn(gameDirectory, versionContainer, pathComparer)
                 };
 
@@ -247,71 +274,36 @@ public class CUE4ParseViewModel : ViewModel
             switch (Provider)
             {
                 case StreamedFileProvider p:
-                    switch (p.LiveGame)
+                    // Prefer LiveGame; also accept Canonical GameDirectory so a mismatched LiveGame
+                    // string can never leave Fortnite/VALORANT LIVE with zero registered paks.
+                    var liveKind = p.LiveGame;
+                    if (string.IsNullOrWhiteSpace(liveKind))
+                    {
+                        var gd = ProfileManager.CanonicalizeGameDirectory(UserSettings.Default.GameDirectory ?? "");
+                        liveKind = gd switch
+                        {
+                            Constants._FN_LIVE_TRIGGER => "FortniteLive",
+                            Constants._VAL_LIVE_TRIGGER => "ValorantLive",
+                            _ => liveKind
+                        };
+                    }
+
+                    switch (liveKind)
                     {
                         case "FortniteLive":
                         {
-                            var manifestInfo = _apiEndpointView.EpicApi.GetManifest(cancellationToken);
-                            if (manifestInfo is null)
+                            if (!UserSettings.Default.AutoLoadFortniteLiveOnStartup)
                             {
-                                throw new FileLoadException("Could not load latest Fortnite manifest, you may have to switch to your local installation.");
+                                Log.Information(
+                                    "Fortnite LIVE: skipping auto-load (Settings → Auto Load Fortnite LIVE on Startup is off). Use Directory → Load Fortnite LIVE…");
+                                FLogger.Append(ELog.Information, () =>
+                                    FLogger.Text(
+                                        "Fortnite LIVE profile ready — use Directory → Load Fortnite LIVE… to download/register archives (or enable auto-load in Settings).",
+                                        Constants.WHITE, true));
+                                break;
                             }
 
-                            var cacheDir = Directory.CreateDirectory(Path.Combine(UserSettings.Default.OutputDirectory, ".data")).FullName;
-                            var manifestOptions = new ManifestParseOptions
-                            {
-                                ChunkCacheDirectory = cacheDir,
-                                ManifestCacheDirectory = cacheDir,
-                                ChunkBaseUrl = "https://egdownload.fastly-edge.com/Builds/Fortnite/CloudDir/",
-                                Decompressor = Compression.Decompressor,
-                                Client = _chunkClient,
-                                CacheChunksAsIs = false
-                            };
-
-                            var startTs = Stopwatch.GetTimestamp();
-                            FBuildPatchAppManifest manifest;
-
-                            try
-                            {
-                                (manifest, _) = manifestInfo.DownloadAndParseAsync(manifestOptions,
-                                    cancellationToken: cancellationToken,
-                                    elementDownloadPredicate: static x => x.Uri.Host is "egdownload.fastly-edge.com" or "epicgames-download1.akamaized.net" or "download.epicgames.com"
-                                ).GetAwaiter().GetResult();
-                            }
-                            catch (HttpRequestException ex)
-                            {
-                                Log.Error("Failed to download manifest ({ManifestUri})", ex.Data["ManifestUri"]?.ToString() ?? "");
-                                throw;
-                            }
-
-                            if (manifest.TryFindFile("Cloud/IoStoreOnDemand.ini", out var ioStoreOnDemandFile))
-                            {
-                                IoStoreOnDemand.Read(new StreamReader(ioStoreOnDemandFile.GetStream()));
-                            }
-
-                            Parallel.ForEach(manifest.Files.Where(x => _fnLiveRegex.IsMatch(x.FileName)), fileManifest =>
-                            {
-                                p.RegisterVfs(fileManifest.FileName, [fileManifest.GetStream()],
-                                    it => new FRandomAccessStreamArchive(it, manifest.FindFile(it)!.GetStream(), p.Versions));
-                            });
-
-                            var manifests = _apiEndpointView.DillyApi.GetManifests(cancellationToken);
-                            var downloadUrl = manifests.First(x => x.AppName == "Fortnite_Studio").DownloadUrl;
-
-                            using var client = new HttpClient();
-                            var manifestBytes = client.GetByteArrayAsync(downloadUrl).GetAwaiter().GetResult();
-
-                            var uefnManifest = FBuildPatchAppManifest.Deserialize(manifestBytes, manifestOptions);
-
-                            Parallel.ForEach(uefnManifest.Files.Where(x => _fnLiveRegex.IsMatch(x.FileName)), fileManifest =>
-                            {
-                                p.RegisterVfs(fileManifest.FileName, [fileManifest.GetStream()],
-                                    it => new FRandomAccessStreamArchive(it, uefnManifest.FindFile(it)!.GetStream(), p.Versions));
-                            });
-
-                            var elapsedTime = Stopwatch.GetElapsedTime(startTs);
-                            FLogger.Append(ELog.Information, () =>
-                                FLogger.Text($"Fortnite [LIVE] has been loaded successfully in {elapsedTime.TotalMilliseconds:F1}ms", Constants.WHITE, true));
+                            RegisterFortniteLiveFromCdn(p, cancellationToken);
                             break;
                         }
                         case "ValorantLive":
@@ -319,7 +311,10 @@ public class CUE4ParseViewModel : ViewModel
                             var manifest = _apiEndpointView.ValorantApi.GetManifest(cancellationToken);
                             if (manifest == null)
                             {
-                                throw new Exception("Could not load latest Valorant manifest, you may have to switch to your local installation.");
+                                throw new Exception(
+                                    "Could not load latest Valorant LIVE manifest (API returned an error / 404). " +
+                                    "The public valorant-api.com/fmodel endpoint appears offline — switch to a local VALORANT install profile, " +
+                                    "or create one via Profile Selector → Make New Profile pointing at ShooterGame\\Content\\Paks.");
                             }
 
                             Parallel.ForEach(manifest.Paks, pak =>
@@ -331,6 +326,9 @@ public class CUE4ParseViewModel : ViewModel
                                 FLogger.Text($"Valorant '{manifest.Header.GameVersion}' has been loaded successfully", Constants.WHITE, true));
                             break;
                         }
+                        default:
+                            Log.Warning("StreamedFileProvider LiveGame '{LiveGame}' is not FortniteLive/ValorantLive — no LIVE archives registered", p.LiveGame);
+                            break;
                     }
 
                     break;
@@ -356,6 +354,267 @@ public class CUE4ParseViewModel : ViewModel
     }
 
     /// <summary>
+    /// Download Fortnite LIVE build manifest from Epic CDN and register pak/utoc archives.
+    /// Used on startup when auto-load is enabled, or via Directory → Load Fortnite LIVE….
+    /// </summary>
+    public async Task LoadFortniteLiveArchivesAsync()
+    {
+        if (Provider is not StreamedFileProvider p)
+            throw new InvalidOperationException("Not a streamed (LIVE) provider.");
+
+        var liveKind = p.LiveGame;
+        if (string.IsNullOrWhiteSpace(liveKind) ||
+            !liveKind.Equals("FortniteLive", StringComparison.OrdinalIgnoreCase))
+        {
+            var gd = ProfileManager.CanonicalizeGameDirectory(UserSettings.Default.GameDirectory ?? "");
+            if (gd != Constants._FN_LIVE_TRIGGER)
+                throw new InvalidOperationException("Switch to the Fortnite LIVE profile first.");
+            liveKind = "FortniteLive";
+        }
+
+        if (_fortniteLiveManifest != null)
+            throw new InvalidOperationException("Fortnite LIVE archives are already loaded in this session.");
+
+        await _threadWorkerView.Begin(cancellationToken =>
+        {
+            RegisterFortniteLiveFromCdn(p, cancellationToken);
+        });
+    }
+
+    /// <summary>
+    /// Fetch Epic launcher + build manifests and register Fortnite LIVE VFS archives (and optional UEFN).
+    /// Must run on the thread-worker (blocking HTTP).
+    /// </summary>
+    private void RegisterFortniteLiveFromCdn(StreamedFileProvider p, CancellationToken cancellationToken)
+    {
+        Log.Information("Fortnite LIVE: requesting launcher manifest info…");
+        var manifestInfo = _apiEndpointView.EpicApi.GetManifest(cancellationToken);
+        if (manifestInfo is null)
+        {
+            throw new FileLoadException("Could not load latest Fortnite manifest, you may have to switch to your local installation.");
+        }
+
+        var cacheDir = Directory.CreateDirectory(Path.Combine(UserSettings.Default.OutputDirectory, ".data")).FullName;
+        var manifestOptions = new ManifestParseOptions
+        {
+            ChunkCacheDirectory = cacheDir,
+            ManifestCacheDirectory = cacheDir,
+            ChunkBaseUrl = "https://egdownload.fastly-edge.com/Builds/Fortnite/CloudDir/",
+            Decompressor = Compression.Decompressor,
+            Client = _chunkClient,
+            // Match upstream FModel — false is the tested path for LIVE chunk reuse.
+            CacheChunksAsIs = false
+        };
+
+        var startTs = Stopwatch.GetTimestamp();
+        FBuildPatchAppManifest manifest;
+
+        // Epic returns several CDN mirrors. Akamai often 403s; cloudfront is newer.
+        // Prefer Fastly (known-good with f_token). Never block forever on a bad mirror.
+        try
+        {
+            ApplicationService.ApplicationView?.Status.UpdateStatusLabel(
+                "Downloading LIVE build manifest…", "Loading");
+            Log.Information("Fortnite LIVE: downloading build manifest (preferring egdownload.fastly-edge.com)…");
+
+            using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            downloadCts.CancelAfter(TimeSpan.FromMinutes(2));
+
+            (manifest, _) = manifestInfo.DownloadAndParseAsync(manifestOptions,
+                cancellationToken: downloadCts.Token,
+                elementDownloadPredicate: static x =>
+                    x.Uri.Host.Equals("egdownload.fastly-edge.com", StringComparison.OrdinalIgnoreCase)
+            ).ConfigureAwait(false).GetAwaiter().GetResult();
+
+            _fortniteLiveManifest = manifest;
+            Log.Information("Fortnite LIVE: build manifest parsed OK");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                "Timed out downloading the Fortnite LIVE build manifest from Epic CDN (egdownload.fastly-edge.com). " +
+                "Check network/firewall, or switch to a local Fortnite install.");
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Error("Failed to download manifest ({ManifestUri})", ex.Data["ManifestUri"]?.ToString() ?? "");
+            throw;
+        }
+
+        if (manifest.TryFindFile("Cloud/IoStoreOnDemand.ini", out var ioStoreOnDemandFile))
+        {
+            IoStoreOnDemand.Read(new StreamReader(ioStoreOnDemandFile.GetStream()));
+        }
+
+        ApplicationService.ApplicationView?.Status.UpdateStatusLabel(
+            "Registering LIVE archives…", "Loading");
+        Log.Information("Fortnite LIVE: registering VFS archives…");
+
+        // Match upstream FModel: pak/utoc in parallel; .uondemandtoc must be
+        // materialized via EpicManifestParser's parallel chunk path first.
+        // Sync RegisterVfs on those TOCs downloads chunks one-by-one and can
+        // stall several minutes on the last few small files.
+        RegisterFortniteLiveArchives(p, manifest, cancellationToken);
+
+        ApplicationService.ApplicationView?.Status.UpdateStatusLabel(
+            $"{p.UnloadedVfs.Count} archives (Fortnite)", "Registered");
+        Log.Information("Fortnite LIVE: registered {Count} archives", p.UnloadedVfs.Count);
+
+        // UEFN / Creative is optional (off by default) — it roughly doubles LIVE register time.
+        if (UserSettings.Default.FortniteLiveIncludeUefn)
+        {
+            try
+            {
+                var manifests = _apiEndpointView.DillyApi.GetManifests(cancellationToken);
+                var studio = manifests?.FirstOrDefault(x => x.AppName == "Fortnite_Studio");
+                if (studio != null && !string.IsNullOrWhiteSpace(studio.DownloadUrl))
+                {
+                    ApplicationService.ApplicationView?.Status.UpdateStatusLabel(
+                        "UEFN manifest…", "Registered");
+
+                    using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+                    var manifestBytes = client.GetByteArrayAsync(studio.DownloadUrl, cancellationToken)
+                        .ConfigureAwait(false).GetAwaiter().GetResult();
+
+                    var uefnManifest = FBuildPatchAppManifest.Deserialize(manifestBytes, manifestOptions);
+                    RegisterFortniteLiveArchives(p, uefnManifest, cancellationToken);
+                }
+                else
+                {
+                    Log.Warning("Fortnite_Studio manifest missing from Dilly — skipping UEFN LIVE archives");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "UEFN LIVE registration failed; continuing with main Fortnite archives");
+                FLogger.Append(ELog.Warning, () =>
+                    FLogger.Text("UEFN LIVE archives skipped (download/register failed)", Constants.WHITE, true));
+            }
+        }
+        else
+        {
+            Log.Information("Fortnite LIVE: skipping UEFN (enable Settings → Fortnite LIVE Include UEFN to load Creative archives)");
+        }
+
+        var elapsedTime = Stopwatch.GetElapsedTime(startTs);
+        FLogger.Append(ELog.Information, () =>
+            FLogger.Text($"Fortnite [LIVE] has been loaded successfully in {elapsedTime.TotalMilliseconds:F1}ms", Constants.WHITE, true));
+    }
+
+    /// <summary>
+    /// Register Fortnite LIVE pak/utoc archives, and materialize <c>.uondemandtoc</c> files via
+    /// EpicManifestParser's parallel chunk download before handing them to CUE4Parse.
+    /// Sync-streaming those TOCs downloads BuildPatch chunks one-by-one and can stall minutes
+    /// on the last few (often small) files — matching the slow path vs upstream FModel.
+    /// </summary>
+    private void RegisterFortniteLiveArchives(StreamedFileProvider provider, FBuildPatchAppManifest manifest,
+        CancellationToken cancellationToken)
+    {
+        var archiveFiles = manifest.Files.Where(x =>
+            _fnLiveRegex.IsMatch(x.FileName) &&
+            (x.FileName.EndsWith(".pak", StringComparison.OrdinalIgnoreCase) ||
+             x.FileName.EndsWith(".utoc", StringComparison.OrdinalIgnoreCase) ||
+             x.FileName.EndsWith(".uondemandtoc", StringComparison.OrdinalIgnoreCase))).ToList();
+        var parallelOptions = new ParallelOptions { CancellationToken = cancellationToken };
+
+        Parallel.ForEach(
+            archiveFiles.Where(x => !x.FileName.EndsWith(".uondemandtoc", StringComparison.OrdinalIgnoreCase)),
+            parallelOptions,
+            fileManifest =>
+            {
+                provider.RegisterVfs(fileManifest.FileName, [fileManifest.GetStream()],
+                    it => new FRandomAccessStreamArchive(it, manifest.FindFile(it)!.GetStream(), provider.Versions));
+            });
+
+        var onDemand = archiveFiles
+            .Where(x => x.FileName.EndsWith(".uondemandtoc", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (onDemand.Count == 0)
+            return;
+
+        Log.Information("Fortnite LIVE: materializing {Count} on-demand TOC(s) via parallel chunk download…", onDemand.Count);
+        ApplicationService.ApplicationView?.Status.UpdateStatusLabel(
+            $"{onDemand.Count} on-demand TOC(s)…", "Registered");
+
+        foreach (var fileManifest in onDemand)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var sw = Stopwatch.StartNew();
+            using var stream = fileManifest.GetStream();
+            // concurrency: 8 — EpicManifestParser parallel chunk fetch (not sync one-chunk-at-a-time).
+            var data = stream.SaveBytesAsync(8, cancellationToken).ConfigureAwait(false).GetAwaiter().GetResult();
+            using var archive = new FByteArchive(fileManifest.FileName, data, provider.Versions);
+            provider.RegisterVfs(new IoChunkToc(archive));
+            Log.Information("Fortnite LIVE: on-demand TOC {Name} ({Size:N0} bytes) in {Ms:F0}ms",
+                Path.GetFileName(fileManifest.FileName), data.Length, sw.Elapsed.TotalMilliseconds);
+        }
+    }
+
+    /// <summary>
+    /// Download (or copy from chunk cache) Fortnite LIVE pak/utoc/ucas files into a local folder,
+    /// then create/update a <c>Fortnite (Cached)</c> profile so the next launch uses DefaultFileProvider.
+    /// </summary>
+    /// <returns>Local Paks directory path, or null if cancelled/unavailable.</returns>
+    public async Task<string> CacheFortniteLiveArchivesToDiskAsync(string rootDirectory, IProgress<(int done, int total, string name)> progress = null, CancellationToken cancellationToken = default)
+    {
+        if (_fortniteLiveManifest == null)
+            throw new InvalidOperationException("Load Fortnite LIVE first in this session, then save archives to disk.");
+
+        var files = _fortniteLiveManifest.Files
+            .Where(x => _fnLiveRegex.IsMatch(x.FileName))
+            .OrderBy(x => x.FileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (files.Count == 0)
+            throw new InvalidOperationException("No FortniteGame/Content/Paks files found in the LIVE manifest.");
+
+        Directory.CreateDirectory(rootDirectory);
+        var total = files.Count;
+        var done = 0;
+
+        foreach (var file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var relative = file.FileName.Replace('/', Path.DirectorySeparatorChar);
+            var destPath = Path.Combine(rootDirectory, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+
+            progress?.Report((done, total, file.FileName));
+
+            if (File.Exists(destPath) && new FileInfo(destPath).Length == (long)file.FileSize)
+            {
+                done++;
+                continue;
+            }
+
+            var stream = file.GetStream();
+            await stream.SaveFileAsync(destPath, cancellationToken: cancellationToken).ConfigureAwait(false);
+            done++;
+            progress?.Report((done, total, file.FileName));
+        }
+
+        var paksDir = Path.Combine(rootDirectory, "FortniteGame", "Content", "Paks");
+        if (!Directory.Exists(paksDir))
+            throw new DirectoryNotFoundException($"Expected paks folder was not created: {paksDir}");
+
+        var cached = DirectorySettings.Fresh("Fortnite (Cached)", paksDir, EGame.GAME_UE5_8, manual: true);
+        // Carry over AES from the LIVE session so the cached profile mounts immediately.
+        if (UserSettings.Default.CurrentDir?.AesKeys != null)
+            cached.AesKeys = UserSettings.Default.CurrentDir.AesKeys;
+
+        ProfileManager.EnsureFromDirectory(cached, "Fortnite (Cached)");
+        Log.Information("Cached {Count} LIVE archives under {Dir}; profile Fortnite (Cached) → {Paks}", total, rootDirectory, paksDir);
+        return paksDir;
+    }
+
+    public long EstimateFortniteLiveCacheBytes()
+    {
+        if (_fortniteLiveManifest == null) return 0;
+        return _fortniteLiveManifest.Files
+            .Where(x => _fnLiveRegex.IsMatch(x.FileName))
+            .Sum(x => (long)x.FileSize);
+    }
+
+    /// <summary>
     /// load virtual files system from GameDirectory
     /// </summary>
     /// <returns></returns>
@@ -367,6 +626,9 @@ public class CUE4ParseViewModel : ViewModel
         var aesMax = Provider.RequiredKeys.Count + Provider.Keys.Count;
         var archiveMax = Provider.UnloadedVfs.Count + Provider.MountedVfs.Count;
         Log.Information($"Project: {Provider.ProjectName} | Mounted: {Provider.MountedVfs.Count}/{archiveMax} | AES: {Provider.Keys.Count}/{aesMax} | Files: x{Provider.Files.Count}");
+
+        // Switch FMDex off any previous game's index (persisted Active File / Settings).
+        FMDexService.Instance.BindToProvider(Provider);
 
         if (UserSettings.Default.AutoLoadAllFilesOnStartup)
             AutoLoadAllFiles();
@@ -661,12 +923,19 @@ public class CUE4ParseViewModel : ViewModel
         }
     }
 
-    private static AbstractVfsFileProvider CreateArcRaidersProvider(
+    /// <summary>
+    /// Provider with on-read Theia decrypt for <c>metadat0</c> sibling .meta files.
+    /// Used for Arc Raiders and MTFS / Marvel Tokon (same layout, separate CONST8 profiles).
+    /// </summary>
+    private static AbstractVfsFileProvider CreateTheiaAwareProvider(
         string gameDirectory,
         VersionContainer versionContainer,
         StringComparer pathComparer)
     {
-        Log.Information("Arc Raiders provider (on-read Theia): {Source}", gameDirectory);
+        // Profile (Arc vs Mtfs CONST8) is resolved inside the provider and logged there.
+        Log.Information(
+            "Theia-aware provider for {Dir} (UE={Game}) — on-read decrypt when .meta is present",
+            gameDirectory, versionContainer.Game);
         return new ArcRaidersFileProvider(
             gameDirectory,
             SearchOption.AllDirectories,
@@ -674,11 +943,22 @@ public class CUE4ParseViewModel : ViewModel
             pathComparer);
     }
 
+    [Obsolete("Use CreateTheiaAwareProvider")]
+    private static AbstractVfsFileProvider CreateArcRaidersProvider(
+        string gameDirectory,
+        VersionContainer versionContainer,
+        StringComparer pathComparer)
+        => CreateTheiaAwareProvider(gameDirectory, versionContainer, pathComparer);
+
     private static AbstractVfsFileProvider CreateDefaultProviderMaybeWarn(
         string gameDirectory,
         VersionContainer versionContainer,
         StringComparer pathComparer)
     {
+        // Belt-and-suspenders: even if the switch missed it, never open Theia packs as plaintext.
+        if (TheiaPakDecryptor.DirectoryHasTheiaMeta(gameDirectory))
+            return CreateTheiaAwareProvider(gameDirectory, versionContainer, pathComparer);
+
         WarnIfArcRaidersPathMismatch(gameDirectory, versionContainer.Game);
         return new DefaultFileProvider(gameDirectory, SearchOption.AllDirectories, versionContainer, pathComparer);
     }
@@ -898,6 +1178,280 @@ public class CUE4ParseViewModel : ViewModel
     public void CodeFolder(CancellationToken cancellationToken, TreeItem folder)
         => BulkFolder(cancellationToken, folder, asset => Extract(cancellationToken, asset, TabControl.HasNoTabs, EBulkType.Code | EBulkType.Auto));
 
+    /// <summary>Walk a folder tree and append UE class tags to the active FMDex (one save at the end).</summary>
+    public void IndexFolderForFMDex(CancellationToken cancellationToken, TreeItem folder)
+    {
+        FMDexService.Instance.BindToProvider(Provider);
+
+        var assets = new List<GameFile>();
+        CollectFolderAssets(folder, assets);
+        RunFMDexIndex(cancellationToken, assets, folder.PathAtThisPoint);
+    }
+
+    /// <summary>Index every mounted package into FMDex (one save at the end). Does not require Assets Explorer.</summary>
+    public void IndexArchiveForFMDex(CancellationToken cancellationToken)
+    {
+        FMDexService.Instance.BindToProvider(Provider);
+
+        var assets = new List<GameFile>(Provider.Files.Count);
+        foreach (var asset in Provider.Files.Values)
+        {
+            if (asset.IsUePackagePayload) continue;
+            assets.Add(asset);
+        }
+
+        RunFMDexIndex(cancellationToken, assets, Provider.ProjectName ?? "archive");
+    }
+
+    /// <summary>Index selected packages into FMDex (one save at the end).</summary>
+    public void IndexAssetsForFMDex(CancellationToken cancellationToken, IEnumerable<GameFile> assets)
+    {
+        FMDexService.Instance.BindToProvider(Provider);
+        RunFMDexIndex(cancellationToken, assets.ToList(), "selection");
+    }
+
+    private static void CollectFolderAssets(TreeItem folder, List<GameFile> into)
+    {
+        foreach (var entry in folder.AssetsList.Assets.OrderBy(a => a.Asset.Size))
+            into.Add(entry.Asset);
+        foreach (var f in folder.Folders)
+            CollectFolderAssets(f, into);
+    }
+
+    private static int ResolveFMDexMaxThreads()
+    {
+        var n = UserSettings.Default.FMDexMaxThreads;
+        if (n <= 0)
+        {
+            // Header reads are mostly I/O + Theia decrypt wait — oversubscribe CPUs so
+            // workers stay busy while others block on disk/decrypt.
+            n = Math.Max(Environment.ProcessorCount * 4, 32);
+        }
+
+        return Math.Clamp(n, 1, 512);
+    }
+
+    private void RunFMDexIndex(CancellationToken cancellationToken, List<GameFile> assets, string label)
+    {
+        var indexed = 0;
+        var nonPackage = 0;
+        var alreadyIndexed = 0;
+        var emptyTags = 0;
+        var failed = 0;
+        var processed = 0;
+        var threads = ResolveFMDexMaxThreads();
+        var timer = Stopwatch.StartNew();
+
+        FMDexService.Instance.EnsureLoaded();
+
+        // Skip packages already present in the active FMDex (same session / same index file).
+        // Smallest first so early progress is fast and workers stay busy on light packages.
+        var queue = new ConcurrentQueue<GameFile>();
+        foreach (var a in assets
+                     .Where(a =>
+                     {
+                         if (!a.IsUePackage)
+                         {
+                             nonPackage++;
+                             return false;
+                         }
+
+                         if (FMDexService.Instance.IsIndexed(a.Path))
+                         {
+                             alreadyIndexed++;
+                             return false;
+                         }
+
+                         return true;
+                     })
+                     .OrderBy(a => a.Size))
+        {
+            queue.Enqueue(a);
+        }
+
+        var packageTotal = queue.Count;
+        if (packageTotal == 0)
+        {
+            timer.Stop();
+            ApplicationService.ApplicationView.Status.UpdateStatusLabel(
+                alreadyIndexed > 0 ? $"{alreadyIndexed} already indexed" : "no packages to index",
+                "FMDex");
+            FLogger.Append(ELog.Information, () =>
+                FLogger.Text(
+                    alreadyIndexed > 0
+                        ? $"FMDex: '{label}' — {alreadyIndexed} already indexed, nothing new ({FormatElapsed(timer.Elapsed)})"
+                        : $"FMDex: '{label}' has no .uasset/.umap packages ({nonPackage} other file(s)).",
+                    Constants.WHITE, true));
+            return;
+        }
+
+        ApplicationService.ApplicationView.Status.UpdateStatusLabel(
+            $"indexing… 0/{packageTotal} ({threads} workers, {alreadyIndexed} skipped)", "FMDex");
+
+        // Batch results to avoid lock contention on every Upsert
+        var pending = new ConcurrentDictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var lastStatusTicks = Environment.TickCount64;
+
+        void PushStatus(bool force)
+        {
+            var now = Environment.TickCount64;
+            if (!force && now - Volatile.Read(ref lastStatusTicks) < 200)
+                return;
+            Interlocked.Exchange(ref lastStatusTicks, now);
+
+            var done = Volatile.Read(ref processed);
+            var idx = Volatile.Read(ref indexed);
+            var fail = Volatile.Read(ref failed);
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.CheckAccess())
+            {
+                ApplicationService.ApplicationView.Status.UpdateStatusLabel(
+                    $"indexing… {idx} indexed / {fail} failed ({done}/{packageTotal}) [{threads} thr]",
+                    "FMDex");
+                return;
+            }
+
+            dispatcher.BeginInvoke(() =>
+                ApplicationService.ApplicationView.Status.UpdateStatusLabel(
+                    $"indexing… {idx} indexed / {fail} failed ({done}/{packageTotal}) [{threads} thr]",
+                    "FMDex"));
+        }
+
+        var workers = new Task[threads];
+        for (var w = 0; w < threads; w++)
+        {
+            workers[w] = Task.Factory.StartNew(() =>
+            {
+                while (queue.TryDequeue(out var entry))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var result = TryIndexEntryForFMDex(entry, pending);
+                    switch (result)
+                    {
+                        case 1: Interlocked.Increment(ref indexed); break;
+                        case 2: Interlocked.Increment(ref emptyTags); break;
+                        default: Interlocked.Increment(ref failed); break;
+                    }
+
+                    Interlocked.Increment(ref processed);
+                    PushStatus(force: false);
+                }
+            }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        }
+
+        try
+        {
+            Task.WaitAll(workers, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // flush whatever completed
+        }
+
+        PushStatus(force: true);
+
+        FMDexService.Instance.UpsertBatch(
+            pending.Select(kv => (kv.Key, kv.Value)));
+        pending.Clear();
+        FMDexService.Instance.Save();
+
+        // Header reads allocate large byte[] (LOH). Force compact so RAM drops after a full-game index.
+        ReleaseFMDexIndexMemory();
+
+        Application.Current.Dispatcher.Invoke(() => SearchVm.RefreshFilter());
+
+        timer.Stop();
+        var skipNote = alreadyIndexed > 0 ? $", {alreadyIndexed} already indexed" : "";
+        var detail =
+            $"FMDex indexed '{label}': {indexed} package(s)" +
+            (emptyTags > 0 ? $", {emptyTags} empty-export" : "") +
+            (failed > 0 ? $", {failed} failed" : "") +
+            skipNote +
+            (nonPackage > 0 ? $", {nonPackage} non-package skipped" : "") +
+            $" [{threads} workers] in {FormatElapsed(timer.Elapsed)} → ";
+        var outPath = FMDexService.Instance.LoadedPath;
+        var outDir = FMDexService.Instance.DirectoryPath;
+
+        FLogger.Append(ELog.Information, () =>
+        {
+            FLogger.Text(detail, Constants.WHITE);
+            if (!string.IsNullOrWhiteSpace(outPath) && File.Exists(outPath))
+                FLogger.Link(Path.GetFileName(outPath), outPath);
+            else
+                FLogger.Text("(unsaved)", Constants.WHITE);
+
+            FLogger.Text("  ", Constants.WHITE);
+            if (!string.IsNullOrWhiteSpace(outDir) && Directory.Exists(outDir))
+                FLogger.Link(outDir, outDir, true);
+            else
+                FLogger.Text("", Constants.WHITE, true);
+        });
+
+        ApplicationService.ApplicationView.Status.UpdateStatusLabel(
+            $"{indexed} indexed" + (alreadyIndexed > 0 ? $", {alreadyIndexed} skipped" : ""),
+            "FMDex");
+    }
+
+    private static string FormatElapsed(TimeSpan elapsed)
+    {
+        if (elapsed.TotalHours >= 1)
+            return elapsed.ToString(@"h\:mm\:ss");
+        if (elapsed.TotalMinutes >= 1)
+            return $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:D2}.{elapsed.Milliseconds:D3}s";
+        return $"{elapsed.TotalSeconds:0.000}s";
+    }
+
+    /// <summary>Drop LOH / gen2 retained by header-only package loads during FMDex indexing.</summary>
+    private static void ReleaseFMDexIndexMemory()
+    {
+        try
+        {
+            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "FMDex post-index GC failed");
+        }
+    }
+
+    /// <summary>Header-only package load (no uexp/ubulk) — enough for export class tags.</summary>
+    private IPackage LoadPackageHeaderForFMDex(GameFile file)
+    {
+        var uasset = file.CreateReader();
+        FArchive? noPayload = null;
+        return file switch
+        {
+            FIoStoreEntry io when Provider is IVfsFileProvider vfs =>
+                new IoPackage(uasset, io.IoStoreReader.ContainerHeader, noPayload, noPayload, vfs),
+            FPakEntry or OsGameFile =>
+                new Package(uasset, noPayload, noPayload, noPayload, Provider, useLazySerialization: true),
+            _ => Provider.LoadPackage(file)
+        };
+    }
+
+    /// <returns>1 indexed, 2 loaded but no class tags, -1 failed (non-packages are filtered before call)</returns>
+    private int TryIndexEntryForFMDex(GameFile entry, ConcurrentDictionary<string, List<string>> pending)
+    {
+        try
+        {
+            var pkg = LoadPackageHeaderForFMDex(entry);
+            var tags = FMDexService.CollectClassTags(pkg);
+            if (tags.Count == 0)
+                return 2;
+
+            pending[entry.Path] = tags;
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "FMDex index failed for {Path}", entry.Path);
+            return -1;
+        }
+    }
+
     public void Extract(CancellationToken cancellationToken, GameFile entry, bool addNewTab = false, EBulkType bulk = EBulkType.None)
     {
         ApplicationService.ApplicationView.IsAssetsExplorerVisible = false;
@@ -920,6 +1474,21 @@ public class CUE4ParseViewModel : ViewModel
             {
                 var result = Provider.GetLoadPackageResult(entry);
                 TabControl.SelectedTab.TitleExtra = result.TabTitleExtra;
+
+                if (UserSettings.Default.AutoIndexUnindexedOnLoad &&
+                    entry.IsUePackage &&
+                    !FMDexService.Instance.IsIndexed(entry.Path))
+                {
+                    try
+                    {
+                        FMDexService.Instance.BindToProvider(Provider);
+                        FMDexService.Instance.IndexPackage(entry, result.Package);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "FMDex auto-index failed for {Path}", entry.Path);
+                    }
+                }
 
                 if (saveProperties || updateUi)
                 {

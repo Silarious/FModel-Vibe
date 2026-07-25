@@ -27,6 +27,7 @@
                         <Grid Grid.Row="0" Margin="0 0 0 5" ZIndex="0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="180" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
@@ -38,7 +39,7 @@
                                     </Canvas>
                                 </Viewbox>
                             </Grid>
-                            <TextBox x:Name="SearchTextBox" Grid.Column="0" Grid.ColumnSpan="2" Padding="25 0 0 0" AcceptsTab="False" AcceptsReturn="False">
+                            <TextBox x:Name="SearchTextBox" Grid.Column="0" Padding="25 0 0 0" AcceptsTab="False" AcceptsReturn="False">
                                 <TextBox.Style>
                                     <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
                                         <Setter Property="Text" Value="{Binding SearchTab.FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
@@ -51,7 +52,11 @@
                                     </Style>
                                 </TextBox.Style>
                             </TextBox>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <TextBox Grid.Column="1" Margin="5 0 0 0" AcceptsTab="False" AcceptsReturn="False"
+                                     Text="{Binding SearchTab.TagFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     adonisExtensions:WatermarkExtension.Watermark="Class tag (FMDex)..."
+                                     ToolTip="Filter by FMDex class tags (e.g. Texture2D) or aliases (model, mesh, map, tex, mat, anim, sound, bp). Non-packages use their extension as a tag (Png, Ini, Locres…). map lists .umap first. Unindexed .uasset/.umap still appear at the bottom." />
+                            <StackPanel Grid.Column="2" Orientation="Horizontal">
                                 <ToggleButton ToolTip="Match Case" Padding="5" IsChecked="{Binding SearchTab.HasMatchCaseEnabled}" Style="{DynamicResource {x:Static adonisUi:Styles.ToolbarToggleButton}}">
                                     <Viewbox Width="16" Height="16" HorizontalAlignment="Center">
                                         <Canvas Width="24" Height="24">
@@ -81,7 +86,7 @@
                                     </Viewbox>
                                 </Button>
                             </StackPanel>
-                            <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="10 0 0 0" FontStyle="Italic">
+                            <TextBlock Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="10 0 0 0" FontStyle="Italic">
                                 <TextBlock.Text>
                                     <MultiBinding StringFormat="{}{0:# ### ### ##0} Loaded Packages ({1})">
                                         <Binding Path="SearchTab.ResultsCount" FallbackValue="0" />
@@ -96,18 +101,33 @@
                                 <Style TargetType="{x:Type ListViewItem}" BasedOn="{StaticResource {x:Type ListViewItem}}">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <EventSetter Event="MouseDoubleClick" Handler="OnAssetDoubleClick" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Converter={x:Static converters:FMDexIsUnindexedConverter.Instance}}" Value="True">
+                                            <Setter Property="FontStyle" Value="Italic" />
+                                            <Setter Property="Opacity" Value="0.75" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
                                 </Style>
                             </ListView.Resources>
                             <ListView.View>
                                 <GridView>
-                                    <GridViewColumn Width="900" Header="Path" adonisExtensions:GridViewSortExtension.PropertyName="Path">
+                                    <GridViewColumn Width="720" Header="Path" adonisExtensions:GridViewSortExtension.PropertyName="Path">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock HorizontalAlignment="Left" Text="{Binding Path}" />
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Width="225" Header="Archive" adonisExtensions:GridViewSortExtension.PropertyName="Archive">
+                                    <GridViewColumn Width="220" Header="FMDex Tags">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock HorizontalAlignment="Left"
+                                                           Text="{Binding Converter={x:Static converters:FMDexTagsConverter.Instance}}"
+                                                           FontWeight="SemiBold" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Width="200" Header="Archive" adonisExtensions:GridViewSortExtension.PropertyName="Archive">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock HorizontalAlignment="Left" Text="{Binding Vfs.Name}" />
