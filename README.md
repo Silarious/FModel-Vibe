@@ -69,6 +69,7 @@ Write speeds can saturate SATA hard drives, without ssd multithreading is bottle
 - **Worker thread hopping:** FModel workers hop between threads, so smaller files (JSON/properties) often export better with fewer workers before CPU compute saturation. Larger files (textures) take longer to process and write, so fewer hops occur and more workers are needed to reach saturation. **Add Workers for Image/Models** exists to remedy this.
 - **Skia encode serialization:** Concurrent Skia texture encodes can AV under high DOP. Bulk/queue texture export serializes encode via a shared lock and avoids building WPF `BitmapImage` on LongRunning workers.
 
+![Multithread Settings](https://i.imgur.com/UVDnFDP.jpeg)
 ---
 
 ## Export behavior
