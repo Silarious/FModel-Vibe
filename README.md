@@ -83,7 +83,7 @@ Settings under **General → EXPORT BEHAVIOR** (and related toggles):
 - **Auto Load All Files on Startup** — After archives are recognized, populate the explorer (same as Load → All)
 - **Convert uint64 to Float** — Bit-cast doubles stored as uint64 → readable floats in properties/JSON (Arc Raiders–oriented; leave off if unused)
 - **Metadata Export** — Disabled / Auto Export (sidecar) / Append to Json
-![Export Behaviour Settings](https://imgur.com/NJR3sZq)
+![Export Behaviour Settings](https://i.imgur.com/NJR3sZq.jpeg)
 ---
 
 ## Export Queue
@@ -105,7 +105,7 @@ Queue folder or global exports and run them back-to-back.
 | **Exclude Directories** | Skip path prefixes listed in the ignore box (saved on the active profile) |
 | **Exclude Classes** | Skip packages whose **FMDex** class tags match listed names/fragments/aliases. Unindexed packages are not skipped. Requires FMDex data (use **Index Before Export** or index beforehand) |
 | **Index Before Export** | FMDex-index only the folders selected for this queue run before export (not the whole archive) |
-![Export Queue](https://imgur.com/4CtUaXZ)
+![Export Queue](https://i.imgur.com/4CtUaXZ.jpeg)
 ---
 
 ## FMDex
@@ -118,8 +118,8 @@ Package → UE class tag index for Search and Export Queue class exclusion.
 - Search tag aliases (`model`, `tex`, `anim`, `bp`, …) expand to related UE class fragments without changing stored tags
 - Game/build fields in the index; Detect from mounted project / BuildInfo when available
 
-![FMDex Settings](https://imgur.com/OOR8X4M)
-![FMDex Class Search](https://imgur.com/zEg8FId)
+![FMDex Settings](https://i.imgur.com/OOR8X4M.jpeg)
+![FMDex Class Search](https://i.imgur.com/zEg8FId.jpeg)
 ---
 
 ## Arc Raiders / Theia
@@ -142,7 +142,7 @@ Named settings snapshots for switching games/builds without re-entering paths ea
 - **Save Current Settings as New Profile** (Directory dropdown + top menu)
 - Settings → **Profiles** tab; top-level **Profiles** menu for quick switch
 - Settings changes **autosave** to the active profile (with suspend scopes during bulk profile operations)
-![Profiles Settings](https://imgur.com/omx0sER)
+![Profiles Settings](https://i.imgur.com/omx0sER.jpeg)
 ---
 
 ## Diff Checker
@@ -156,7 +156,7 @@ Top-level window to compare two profiles or manual pak mounts.
 - Optional Write Diff Log (`## ADDED` / `## MODIFIED` / `## REMOVED`)
 - Optional Export Removed Files into `Removed/`
 - Live progress + Stop Diff
-![Diff Checker](https://imgur.com/oy9yWqs)
+![Diff Checker](https://i.imgur.com/oy9yWqs.jpeg)
 ---
 
 ## Metadata
