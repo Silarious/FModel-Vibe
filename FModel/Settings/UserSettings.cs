@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using CUE4Parse.UE4.Assets.Exports.Material;
 using CUE4Parse.UE4.Assets.Exports.Nanite;
 using CUE4Parse.UE4.Lua.unluac;
@@ -18,6 +20,7 @@ using FModel.ViewModels;
 using FModel.ViewModels.ApiEndpoints.Models;
 using FModel.Views.Snooper;
 using Newtonsoft.Json;
+using Serilog;
 
 namespace FModel.Settings
 {
@@ -32,12 +35,119 @@ namespace FModel.Settings
         public static readonly string FilePath = Path.Combine(AppDataFolder, "AppSettings.json");
 #endif
 
+        private static bool _bSave = true;
+        private static bool _autoSaveEnabled;
+        private static bool _suspendAutoSave;
+        private static int _suspendAutoSaveDepth;
+        private static DispatcherTimer _autoSaveTimer;
+        private static UserSettings _autoSaveHooked;
+
         static UserSettings()
         {
             Default = new UserSettings();
         }
 
-        private static bool _bSave = true;
+        /// <summary>
+        /// Hook <see cref="PropertyChanged"/> so live edits debounce-save AppSettings + the active profile.
+        /// Call once after AppSettings.json is loaded (replaces the static ctor instance).
+        /// </summary>
+        public static void EnableAutoSave()
+        {
+            if (_autoSaveHooked != null)
+                _autoSaveHooked.PropertyChanged -= OnDefaultPropertyChanged;
+
+            _autoSaveHooked = Default;
+            if (_autoSaveHooked != null)
+                _autoSaveHooked.PropertyChanged += OnDefaultPropertyChanged;
+
+            _autoSaveEnabled = true;
+        }
+
+        /// <summary>Suppress disk writes during profile PopulateObject / bulk rebinds.</summary>
+        public static void SuspendAutoSave()
+        {
+            _suspendAutoSaveDepth++;
+            _suspendAutoSave = true;
+        }
+
+        public static void ResumeAutoSave()
+        {
+            if (_suspendAutoSaveDepth > 0)
+                _suspendAutoSaveDepth--;
+            if (_suspendAutoSaveDepth == 0)
+                _suspendAutoSave = false;
+        }
+
+        public static IDisposable BeginAutoSaveSuspend() => new AutoSaveSuspendScope();
+
+        private sealed class AutoSaveSuspendScope : IDisposable
+        {
+            public AutoSaveSuspendScope() => SuspendAutoSave();
+            public void Dispose() => ResumeAutoSave();
+        }
+
+        private static void OnDefaultPropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (!_autoSaveEnabled || _suspendAutoSave || !_bSave)
+                return;
+            RequestAutoSave();
+        }
+
+        /// <summary>Debounced persist (≈400ms) of AppSettings.json + active profile snapshot.</summary>
+        public static void RequestAutoSave()
+        {
+            if (!_autoSaveEnabled || _suspendAutoSave || !_bSave || Default == null)
+                return;
+
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.HasShutdownStarted)
+                return;
+
+            void ArmTimer()
+            {
+                if (_autoSaveTimer == null)
+                {
+                    _autoSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+                    _autoSaveTimer.Tick += (_, _) =>
+                    {
+                        _autoSaveTimer.Stop();
+                        PersistLiveSettings();
+                    };
+                }
+
+                _autoSaveTimer.Stop();
+                _autoSaveTimer.Start();
+            }
+
+            if (dispatcher.CheckAccess())
+                ArmTimer();
+            else
+                dispatcher.BeginInvoke(ArmTimer);
+        }
+
+        /// <summary>Write AppSettings.json and the active named profile (if any).</summary>
+        public static void PersistLiveSettings()
+        {
+            if (!_bSave || Default == null || _suspendAutoSave)
+                return;
+
+            using (BeginAutoSaveSuspend())
+            {
+                try
+                {
+                    Save();
+
+                    var profile = Default.CurrentProfileName;
+                    if (!string.IsNullOrWhiteSpace(profile))
+                        ProfileManager.SaveCurrentAs(profile);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to auto-save settings / active profile");
+                }
+            }
+        }
+
         public static void Save()
         {
             if (!_bSave || Default == null) return;
@@ -168,6 +278,35 @@ namespace FModel.Settings
             set => SetProperty(ref _isLoggerExpanded, value);
         }
 
+        // Settings → General SeparatorExpander IsExpanded (persisted per profile)
+        private bool _settingsAdvancedExpanded;
+        public bool SettingsAdvancedExpanded
+        {
+            get => _settingsAdvancedExpanded;
+            set => SetProperty(ref _settingsAdvancedExpanded, value);
+        }
+
+        private bool _settingsExportBehaviorExpanded;
+        public bool SettingsExportBehaviorExpanded
+        {
+            get => _settingsExportBehaviorExpanded;
+            set => SetProperty(ref _settingsExportBehaviorExpanded, value);
+        }
+
+        private bool _settingsMultiThreadingExpanded;
+        public bool SettingsMultiThreadingExpanded
+        {
+            get => _settingsMultiThreadingExpanded;
+            set => SetProperty(ref _settingsMultiThreadingExpanded, value);
+        }
+
+        private bool _settingsFortniteLiveExpanded;
+        public bool SettingsFortniteLiveExpanded
+        {
+            get => _settingsFortniteLiveExpanded;
+            set => SetProperty(ref _settingsFortniteLiveExpanded, value);
+        }
+
         private GridLength _avalonImageSize = new (200);
         public GridLength AvalonImageSize
         {
@@ -245,11 +384,110 @@ namespace FModel.Settings
             set => SetProperty(ref _exportSmallestFilesFirst, value);
         }
 
+        private bool _groupExportLooseAssets = true;
+        /// <summary>
+        /// When true: loose images (png/jpg/bmp/svg) export with Textures;
+        /// text/config/font types (ini, txt, ttf, …) export with Properties.
+        /// When false: fonts stay raw-only (legacy warning on Properties export).
+        /// </summary>
+        public bool GroupExportLooseAssets
+        {
+            get => _groupExportLooseAssets;
+            set => SetProperty(ref _groupExportLooseAssets, value);
+        }
+
+        /// <summary>
+        /// Export Queue: collect every loaded archive file into one flat list, sort smallest→largest,
+        /// and skip per-folder success console logs. Default on.
+        /// </summary>
+        private bool _exportQueueFlatArchiveExport = true;
+        public bool ExportQueueFlatArchiveExport
+        {
+            get => _exportQueueFlatArchiveExport;
+            set => SetProperty(ref _exportQueueFlatArchiveExport, value);
+        }
+
+        /// <summary>
+        /// Export Queue: skip <c>.umap</c> packages while a queue run is active.
+        /// </summary>
+        private bool _exportQueueExcludeUmap;
+        public bool ExportQueueExcludeUmap
+        {
+            get => _exportQueueExcludeUmap;
+            set => SetProperty(ref _exportQueueExcludeUmap, value);
+        }
+
+        /// <summary>
+        /// Export Queue: when true, skip assets under <see cref="ExportQueueIgnoredFolders"/>.
+        /// </summary>
+        private bool _exportQueueExcludeDirectories;
+        public bool ExportQueueExcludeDirectories
+        {
+            get => _exportQueueExcludeDirectories;
+            set => SetProperty(ref _exportQueueExcludeDirectories, value);
+        }
+
+        /// <summary>
+        /// Pasteable list of folder path prefixes to skip during Export Queue runs
+        /// (one per line, or comma/semicolon-separated). Matched against package Directory/Path.
+        /// Saved with the active profile via settings autosave.
+        /// </summary>
+        private string _exportQueueIgnoredFolders = string.Empty;
+        public string ExportQueueIgnoredFolders
+        {
+            get => _exportQueueIgnoredFolders;
+            set => SetProperty(ref _exportQueueIgnoredFolders, value ?? string.Empty);
+        }
+
+        /// <summary>
+        /// Export Queue: when true, skip packages whose FMDex class tags match
+        /// <see cref="ExportQueueIgnoredClasses"/>.
+        /// </summary>
+        private bool _exportQueueExcludeClasses;
+        public bool ExportQueueExcludeClasses
+        {
+            get => _exportQueueExcludeClasses;
+            set => SetProperty(ref _exportQueueExcludeClasses, value);
+        }
+
+        /// <summary>
+        /// Pasteable UE class names / fragments / FMDex aliases (model, tex, anim, …)
+        /// to skip during Export Queue runs. Requires FMDex tags; unindexed packages are not skipped.
+        /// </summary>
+        private string _exportQueueIgnoredClasses = string.Empty;
+        public string ExportQueueIgnoredClasses
+        {
+            get => _exportQueueIgnoredClasses;
+            set => SetProperty(ref _exportQueueIgnoredClasses, value ?? string.Empty);
+        }
+
+        /// <summary>
+        /// Export Queue: when true, run FMDex indexing on the queue's selected folders
+        /// before export work starts (so class-exclusion tags exist). Default off.
+        /// </summary>
+        private bool _exportQueueIndexBeforeExport;
+        public bool ExportQueueIndexBeforeExport
+        {
+            get => _exportQueueIndexBeforeExport;
+            set => SetProperty(ref _exportQueueIndexBeforeExport, value);
+        }
+
         private EMetadataExport _metadataExportMode = EMetadataExport.Disabled;
         public EMetadataExport MetadataExportMode
         {
             get => _metadataExportMode;
             set => SetProperty(ref _metadataExportMode, value);
+        }
+
+        /// <summary>
+        /// Last-used Export Queue global export flags (checkbox combination). Defaults to AllAssets
+        /// (Properties + Textures + Models + Animations + Audio), matching the old dropdown default.
+        /// </summary>
+        private EBulkType _exportQueueBulkType = EBulkType.AllAssets;
+        public EBulkType ExportQueueBulkType
+        {
+            get => _exportQueueBulkType;
+            set => SetProperty(ref _exportQueueBulkType, value);
         }
 
         private bool _autoExportTexturesWithModels;
@@ -336,6 +574,177 @@ namespace FModel.Settings
         {
             get => _fmDexBuild;
             set => SetProperty(ref _fmDexBuild, value ?? string.Empty);
+        }
+
+        private bool _useConcurrentWorkers = true;
+        /// <summary>
+        /// When true, folder / Export Queue exports use <see cref="ExportMaxThreads"/> workers.
+        /// When false, export degree of parallelism is forced to 1 (single worker).
+        /// Default true preserves prior multi-worker behavior.
+        /// </summary>
+        public bool UseConcurrentWorkers
+        {
+            get => _useConcurrentWorkers;
+            set => SetProperty(ref _useConcurrentWorkers, value);
+        }
+
+        private int _exportMaxThreads;
+        /// <summary>
+        /// Max concurrent workers for folder / Export Queue asset exports (UI: Export Max Concurrent Workers).
+        /// 0 = auto (usable cores = ProcessorCount − ReservedCpuCores, min 1).
+        /// Ignored when <see cref="UseConcurrentWorkers"/> is false.
+        /// </summary>
+        public int ExportMaxThreads
+        {
+            get => _exportMaxThreads;
+            set => SetProperty(ref _exportMaxThreads, Math.Max(0, value));
+        }
+
+        private int _imageExportWorkerBias;
+        /// <summary>
+        /// Additional workers for image/texture or model export (UI: Add Workers for Image/Models).
+        /// Added to base export DOP when the bulk type includes <c>EBulkType.Textures</c>
+        /// or <c>EBulkType.Meshes</c> (texture-only, models, AllAssets, or any batch with those set).
+        /// 0 = none; max +16. Still capped at usable cores (ProcessorCount − ReservedCpuCores).
+        /// Ignored when <see cref="UseConcurrentWorkers"/> is false.
+        /// </summary>
+        public int ImageExportWorkerBias
+        {
+            get => _imageExportWorkerBias;
+            set => SetProperty(ref _imageExportWorkerBias, Math.Clamp(value, 0, 16));
+        }
+
+        private int _largeFileExportWorkers = 2;
+        /// <summary>
+        /// Max concurrent workers for packages larger than 10MB and at most 100MB.
+        /// Default 2. Clamped 1–32. Still capped by base export DOP / usable cores.
+        /// Ignored when <see cref="UseConcurrentWorkers"/> is false.
+        /// </summary>
+        public int LargeFileExportWorkers
+        {
+            get => _largeFileExportWorkers;
+            set => SetProperty(ref _largeFileExportWorkers, Math.Clamp(value, 1, 32));
+        }
+
+        private int _hugeFileExportWorkers = 1;
+        /// <summary>
+        /// Max concurrent workers for packages larger than 100MB.
+        /// Default 1. Clamped 1–32. Still capped by base export DOP / usable cores.
+        /// Ignored when <see cref="UseConcurrentWorkers"/> is false.
+        /// </summary>
+        public int HugeFileExportWorkers
+        {
+            get => _hugeFileExportWorkers;
+            set => SetProperty(ref _hugeFileExportWorkers, Math.Clamp(value, 1, 32));
+        }
+
+        private int _reservedCpuCores = 2;
+        /// <summary>
+        /// Logical CPU threads (hyperthreads) excluded from FModel via process affinity (0–4, default 2).
+        /// Keeps CPUs free for other apps; distinct from <see cref="ExportMaxThreads"/>.
+        /// 0 disables affinity restriction. UI label: Reserved CPU Threads.
+        /// </summary>
+        public int ReservedCpuCores
+        {
+            get => _reservedCpuCores;
+            set
+            {
+                var clamped = Math.Clamp(value, 0, 4);
+                if (!SetProperty(ref _reservedCpuCores, clamped))
+                    return;
+                // Defer off the binding/layout pass — sync Apply during Settings template
+                // teardown contributed to WM_SIZE re-entrancy crashes.
+                ScheduleAffinityApply();
+            }
+        }
+
+        private static void ScheduleAffinityApply()
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.HasShutdownStarted)
+            {
+                try { CpuAffinity.Apply(force: true); }
+                catch (Exception ex) { Log.Debug(ex, "[CpuAffinity] Apply failed (no dispatcher)"); }
+                return;
+            }
+
+            dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            {
+                try { CpuAffinity.Apply(force: true); }
+                catch (Exception ex) { Log.Debug(ex, "[CpuAffinity] deferred Apply failed"); }
+            });
+        }
+
+        private bool _enableMemoryGuard = true;
+        /// <summary>
+        /// When true, bulk export workers stall acquiring new packages if process working set
+        /// (or critically low system available RAM) exceeds soft/hard % of total physical memory.
+        /// </summary>
+        public bool EnableMemoryGuard
+        {
+            get => _enableMemoryGuard;
+            set => SetProperty(ref _enableMemoryGuard, value);
+        }
+
+        private int _memorySoftTargetPercent = 55;
+        /// <summary>
+        /// Soft target: % of total physical RAM. Above this, new export work is paused until
+        /// working set drops below target − 5% (hysteresis). Default 55.
+        /// </summary>
+        public int MemorySoftTargetPercent
+        {
+            get => _memorySoftTargetPercent;
+            set
+            {
+                var soft = Math.Clamp(value, 10, 95);
+                if (!SetProperty(ref _memorySoftTargetPercent, soft))
+                    return;
+                // Avoid nested PropertyChanged during the same binding update.
+                if (_memoryHardCapPercent < soft + 5)
+                {
+                    var hard = soft + 5;
+                    var dispatcher = Application.Current?.Dispatcher;
+                    if (dispatcher != null && dispatcher.CheckAccess())
+                        dispatcher.BeginInvoke(DispatcherPriority.Background, () => MemoryHardCapPercent = hard);
+                    else
+                        MemoryHardCapPercent = hard;
+                }
+            }
+        }
+
+        private int _memoryHardCapPercent = 85;
+        /// <summary>
+        /// Hard cap: % of total physical RAM. Above this (or when system available RAM is critical),
+        /// stop issuing new export work; while recovering allow at most one package until under soft resume.
+        /// Default 85. Must stay above soft target.
+        /// </summary>
+        public int MemoryHardCapPercent
+        {
+            get => _memoryHardCapPercent;
+            set
+            {
+                var soft = MemorySoftTargetPercent;
+                SetProperty(ref _memoryHardCapPercent, Math.Clamp(value, soft + 5, 99));
+            }
+        }
+
+        private bool _enableExportPerfLog;
+        /// <summary>
+        /// When true, write <c>Logs/FModel-ExportPerf-*.log</c> listing slow/inefficient exports
+        /// (high score = small file that took long) plus large-file comparison rows.
+        /// </summary>
+        public bool EnableExportPerfLog
+        {
+            get => _enableExportPerfLog;
+            set => SetProperty(ref _enableExportPerfLog, value);
+        }
+
+        private int _exportPerfLogMinMs = 250;
+        /// <summary>Only record exports that take at least this many milliseconds (default 250).</summary>
+        public int ExportPerfLogMinMs
+        {
+            get => _exportPerfLogMinMs;
+            set => SetProperty(ref _exportPerfLogMinMs, Math.Clamp(value, 0, 600_000));
         }
 
         private int _fmDexMaxThreads;

@@ -98,6 +98,111 @@
         </Setter>
     </Style>
 
+    <!-- Expander header that looks like CustomSeparator: lines + label + chevron toggle -->
+    <Style x:Key="SeparatorExpanderHeaderStyle" TargetType="{x:Type ToggleButton}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static adonisUi:Brushes.ForegroundBrush}}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Focusable" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ToggleButton}">
+                    <Border Background="{TemplateBinding Background}" Padding="0 2">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Separator Grid.Column="0" VerticalAlignment="Center" Margin="0"
+                                       Background="{DynamicResource {x:Static adonisUi:Brushes.Layer1BorderBrush}}"/>
+                            <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                       Text="{TemplateBinding Content}"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       FontWeight="SemiBold" FontSize="11" Margin="10 0"/>
+                            <Separator Grid.Column="2" VerticalAlignment="Center" Margin="0"
+                                       Background="{DynamicResource {x:Static adonisUi:Brushes.Layer1BorderBrush}}"/>
+                            <Viewbox Grid.Column="3" Width="12" Height="12" Margin="8 0 0 0"
+                                     VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Canvas Width="24" Height="24">
+                                    <Path x:Name="Chevron"
+                                          Fill="{TemplateBinding Foreground}"
+                                          Data="{StaticResource ArrowIcon}"
+                                          RenderTransformOrigin="0.5,0.5">
+                                        <Path.RenderTransform>
+                                            <RotateTransform Angle="0"/>
+                                        </Path.RenderTransform>
+                                    </Path>
+                                </Canvas>
+                            </Viewbox>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Chevron" Property="RenderTransform">
+                                <Setter.Value>
+                                    <RotateTransform Angle="180"/>
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Foreground" Value="{DynamicResource {x:Static adonisUi:Brushes.AccentBrush}}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+      Visibility-based expand (no ElementName height MultiBindings).
+      The Adonis animated ExpandSite MultiBinding NREs in FindNameInTemplateContent
+      when Settings DataTemplates swap after an expander was opened (WM_SIZE remeasure).
+    -->
+    <Style x:Key="SeparatorExpander" TargetType="{x:Type Expander}" BasedOn="{StaticResource {x:Type Expander}}">
+        <Setter Property="Margin" Value="0 4 0 4"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Expander}">
+                    <Border>
+                        <DockPanel>
+                            <ToggleButton x:Name="HeaderSite" DockPanel.Dock="Top"
+                                          Content="{TemplateBinding Header}"
+                                          ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                          ContentTemplateSelector="{TemplateBinding HeaderTemplateSelector}"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          FocusVisualStyle="{StaticResource ExpanderHeaderFocusVisual}"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Style="{StaticResource SeparatorExpanderHeaderStyle}"/>
+
+                            <ContentPresenter x:Name="ExpandSite"
+                                              Focusable="False"
+                                              Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Visibility="Collapsed"/>
+                        </DockPanel>
+                    </Border>
+
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="True">
+                            <Setter Property="Margin" TargetName="HeaderSite" Value="0 0 0 5"/>
+                            <Setter Property="Visibility" TargetName="ExpandSite" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsExpanded" Value="False">
+                            <Setter Property="KeyboardNavigation.TabNavigation" TargetName="ExpandSite" Value="None"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="DirectoryFilesListBox"
            TargetType="ListBox"
            BasedOn="{StaticResource {x:Type ListBox}}">

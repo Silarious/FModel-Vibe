@@ -6,6 +6,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using CUE4Parse.UE4.Lua.unluac;
 using FModel.Extensions;
 using FModel.Extensions.Themes;
@@ -389,6 +390,14 @@ public partial class SettingsView
 
         path = string.Empty;
         return false;
+    }
+
+    private void OnSettingsTreePreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        // Move focus off numeric TextBoxes before ContentTemplate swap so UpdateSource
+        // runs while the General visual tree is still intact.
+        if (Keyboard.FocusedElement is TextBox)
+            SettingsTree.Focus();
     }
 
     private void OnSelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)

@@ -470,38 +470,41 @@ public static class ProfileManager
     {
         if (string.IsNullOrWhiteSpace(name)) return;
 
-        Directory.CreateDirectory(ProfilesDirectory);
-        SyncCurrentDirToGameDirectory();
-
-        // Save only the active game's PerDirectory entry so profiles stay isolated.
-        var json = JObject.FromObject(UserSettings.Default);
-        json["UeVersion"] = (int)(UserSettings.Default.CurrentDir?.UeVersion ?? EGame.GAME_UE4_LATEST);
-
-        var activeDir = UserSettings.Default.GameDirectory;
-        if (!string.IsNullOrWhiteSpace(activeDir) && json["PerDirectory"] is JObject perDir)
+        using (UserSettings.BeginAutoSaveSuspend())
         {
-            var key = NormalizeDirKey(activeDir);
-            JToken keep = null;
-            foreach (var prop in perDir.Properties().ToList())
+            Directory.CreateDirectory(ProfilesDirectory);
+            SyncCurrentDirToGameDirectory();
+
+            // Save only the active game's PerDirectory entry so profiles stay isolated.
+            var json = JObject.FromObject(UserSettings.Default);
+            json["UeVersion"] = (int)(UserSettings.Default.CurrentDir?.UeVersion ?? EGame.GAME_UE4_LATEST);
+
+            var activeDir = UserSettings.Default.GameDirectory;
+            if (!string.IsNullOrWhiteSpace(activeDir) && json["PerDirectory"] is JObject perDir)
             {
-                if (string.Equals(NormalizeDirKey(prop.Name), key, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(prop.Name, activeDir, StringComparison.OrdinalIgnoreCase))
+                var key = NormalizeDirKey(activeDir);
+                JToken keep = null;
+                foreach (var prop in perDir.Properties().ToList())
                 {
-                    keep = prop.Value;
+                    if (string.Equals(NormalizeDirKey(prop.Name), key, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(prop.Name, activeDir, StringComparison.OrdinalIgnoreCase))
+                    {
+                        keep = prop.Value;
+                    }
                 }
+
+                var isolated = new JObject();
+                if (keep != null)
+                    isolated[key] = keep;
+                else if (UserSettings.Default.CurrentDir != null)
+                    isolated[key] = JObject.FromObject(UserSettings.Default.CurrentDir);
+                json["PerDirectory"] = isolated;
+                json["GameDirectory"] = key;
             }
 
-            var isolated = new JObject();
-            if (keep != null)
-                isolated[key] = keep;
-            else if (UserSettings.Default.CurrentDir != null)
-                isolated[key] = JObject.FromObject(UserSettings.Default.CurrentDir);
-            json["PerDirectory"] = isolated;
-            json["GameDirectory"] = key;
+            File.WriteAllText(GetProfilePath(name), json.ToString(Formatting.Indented));
+            UserSettings.Default.CurrentProfileName = name;
         }
-
-        File.WriteAllText(GetProfilePath(name), json.ToString(Formatting.Indented));
-        UserSettings.Default.CurrentProfileName = name;
     }
 
     /// <summary>
@@ -725,25 +728,28 @@ public static class ProfileManager
         var path = GetProfilePath(name);
         if (!File.Exists(path)) return false;
 
-        // Flush outgoing profile under its own pak-folder key only.
-        // Do NOT migrate to the top-level GameDirectory here — that path may already have been
-        // edited in the UI for a different profile and would corrupt the switch.
-        FlushCurrentDirAtOwnKey();
+        using (UserSettings.BeginAutoSaveSuspend())
+        {
+            // Flush outgoing profile under its own pak-folder key only.
+            // Do NOT migrate to the top-level GameDirectory here — that path may already have been
+            // edited in the UI for a different profile and would corrupt the switch.
+            FlushCurrentDirAtOwnKey();
 
-        var text = File.ReadAllText(path);
-        var json = JObject.Parse(text);
-        JsonConvert.PopulateObject(text, UserSettings.Default);
+            var text = File.ReadAllText(path);
+            var json = JObject.Parse(text);
+            JsonConvert.PopulateObject(text, UserSettings.Default);
 
-        RebindCurrentDirFromPerDirectory(json);
+            RebindCurrentDirFromPerDirectory(json);
 
-        // Profile JSON often leaves IsValid=false even when Url/Path are set — required for InitMappings.
-        foreach (var ep in UserSettings.Default.CurrentDir?.Endpoints ?? [])
-            ep.EnsureConfiguredValidity();
+            // Profile JSON often leaves IsValid=false even when Url/Path are set — required for InitMappings.
+            foreach (var ep in UserSettings.Default.CurrentDir?.Endpoints ?? [])
+                ep.EnsureConfiguredValidity();
 
-        UserSettings.Default.CurrentProfileName = name;
-        // Keep AppSettings.json in sync so restart / exit don't clobber the loaded profile.
-        UserSettings.Save();
-        return true;
+            UserSettings.Default.CurrentProfileName = name;
+            // Keep AppSettings.json in sync so restart / exit don't clobber the loaded profile.
+            UserSettings.Save();
+            return true;
+        }
     }
 
     public static void Delete(string name)

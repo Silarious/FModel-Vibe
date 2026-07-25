@@ -134,6 +134,9 @@ public partial class App
         Log.Information("{OS}", GetOperatingSystemProductName());
         Log.Information("{RuntimeVer}", RuntimeInformation.FrameworkDescription);
         Log.Information("Culture {SysLang}", CultureInfo.CurrentCulture);
+
+        CpuAffinity.Initialize();
+        UserSettings.EnableAutoSave();
     }
 
     private void AppExit(object sender, ExitEventArgs e)
