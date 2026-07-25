@@ -25,6 +25,9 @@ namespace FModel.ViewModels;
 
 public class TabImage : ViewModel
 {
+    /// <summary>Serialize Skia encode for bulk/preview safety (local; no CUE4Parse dependency).</summary>
+    private static readonly object SkiaEncodeSync = new();
+
     public string ExportName { get; set; }
 
     public byte[] ImageBuffer { get; set; }
@@ -85,13 +88,7 @@ public class TabImage : ViewModel
         ExportName += "." + (NoAlpha ? "jpg" : "png");
         using var data = _bmp.Encode(NoAlpha ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png, 100);
         using var stream = new MemoryStream(ImageBuffer = data.ToArray(), false);
-        var image = new BitmapImage();
-        image.BeginInit();
-        image.CacheOption = BitmapCacheOption.OnLoad;
-        image.StreamSource = stream;
-        image.EndInit();
-        image.Freeze();
-        Image = image;
+        Image = LoadFrozenBitmapImage(stream);
     }
 
     private void SetImage(CTexture bitmap)
@@ -103,8 +100,21 @@ public class TabImage : ViewModel
             return;
         }
 
-        _bmp = bitmap.ToSkBitmap();
-        byte[] imageData = _bmp.Encode(NoAlpha ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png, 100).ToArray();
+        if (!IsExportableTexture(bitmap))
+        {
+            ImageBuffer = null;
+            Image = null;
+            Log.Warning("Skipping preview for invalid texture '{Name}' ({W}x{H})", ExportName, bitmap.Width, bitmap.Height);
+            return;
+        }
+
+        byte[] imageData;
+        lock (SkiaEncodeSync)
+        {
+            _bmp = bitmap.ToSkBitmap();
+            using var preview = _bmp.Encode(NoAlpha ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png, 100);
+            imageData = preview.ToArray();
+        }
 
         if (PixelFormatUtils.IsHDR(bitmap.PixelFormat) || (UserSettings.Default.TextureExportFormat != ETextureFormat.Jpeg && UserSettings.Default.TextureExportFormat != ETextureFormat.Png))
         {
@@ -118,13 +128,83 @@ public class TabImage : ViewModel
         }
 
         using var stream = new MemoryStream(imageData);
+        Image = LoadFrozenBitmapImage(stream);
+    }
+
+    /// <summary>
+    /// Bulk/queue export: encode once for disk, no WPF <see cref="BitmapImage"/>.
+    /// Avoids concurrent Skia encode AVs and pointless UI work on LongRunning workers.
+    /// </summary>
+    public static bool TryEncodeForExport(string name, CTexture bitmap, bool noAlpha, out string exportName, out byte[] buffer)
+    {
+        exportName = name;
+        buffer = null;
+        if (bitmap is null || !IsExportableTexture(bitmap))
+            return false;
+
+        try
+        {
+            if (PixelFormatUtils.IsHDR(bitmap.PixelFormat) ||
+                (UserSettings.Default.TextureExportFormat != ETextureFormat.Jpeg &&
+                 UserSettings.Default.TextureExportFormat != ETextureFormat.Png))
+            {
+                buffer = bitmap.Encode(UserSettings.Default.TextureExportFormat, UserSettings.Default.SaveHdrTexturesAsHdr, out var ext);
+                exportName = $"{name}.{ext}";
+                return buffer is { Length: > 0 };
+            }
+
+            lock (SkiaEncodeSync)
+            {
+                using var bmp = bitmap.ToSkBitmap();
+                using var data = bmp.Encode(noAlpha ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png, 100);
+                buffer = data.ToArray();
+            }
+
+            exportName = $"{name}.{(noAlpha ? "jpg" : "png")}";
+            return buffer is { Length: > 0 };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Texture encode failed for '{Name}'", name);
+            buffer = null;
+            return false;
+        }
+    }
+
+    public static bool TryEncodeForExport(string name, SKBitmap bitmap, bool noAlpha, out string exportName, out byte[] buffer)
+    {
+        exportName = name;
+        buffer = null;
+        if (bitmap is null || bitmap.Width <= 0 || bitmap.Height <= 0)
+            return false;
+
+        try
+        {
+            using var data = bitmap.Encode(noAlpha ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png, 100);
+            buffer = data.ToArray();
+            exportName = $"{name}.{(noAlpha ? "jpg" : "png")}";
+            return buffer is { Length: > 0 };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Texture encode failed for '{Name}'", name);
+            buffer = null;
+            return false;
+        }
+    }
+
+    private static bool IsExportableTexture(CTexture bitmap)
+        => bitmap.Width > 0 && bitmap.Height > 0 && bitmap.Data is { Length: > 0 };
+
+    private static BitmapImage LoadFrozenBitmapImage(Stream stream)
+    {
         var image = new BitmapImage();
         image.BeginInit();
         image.CacheOption = BitmapCacheOption.OnLoad;
         image.StreamSource = stream;
         image.EndInit();
         image.Freeze();
-        Image = image;
+        return image;
     }
 
     private SKBitmap _bmp;
@@ -331,9 +411,26 @@ public class TabItem : ViewModel
 
     public void AddImage(string name, bool rnn, CTexture img, bool save, bool updateUi)
     {
+        if (img is null) return;
+
+        // Bulk/queue: encode+save only — never build TabImage/BitmapImage on worker threads.
+        // Concurrent TabImage.SetImage → sk_pixmap_encode_image AVs under flat-archive DOP.
+        if (save && !updateUi)
+        {
+            if (!TabImage.TryEncodeForExport(name, img, noAlpha: false, out var exportName, out var buffer))
+            {
+                Interlocked.Increment(ref ApplicationService.ApplicationView.CUE4Parse.FailedExportCount);
+                Log.Error("Failed to encode texture '{Name}' for bulk export", name);
+                return;
+            }
+
+            SaveImageBuffer(exportName, buffer, updateUi: false);
+            return;
+        }
+
+        var t = new TabImage(name, rnn, img);
         Application.Current.Dispatcher.Invoke(() =>
         {
-            var t = new TabImage(name, rnn, img);
             if (save) SaveImage(t, updateUi);
             if (!updateUi) return;
 
@@ -346,9 +443,24 @@ public class TabItem : ViewModel
 
     public void AddImage(string name, bool rnn, SKBitmap img, bool save, bool updateUi)
     {
+        if (img is null) return;
+
+        if (save && !updateUi)
+        {
+            if (!TabImage.TryEncodeForExport(name, img, noAlpha: false, out var exportName, out var buffer))
+            {
+                Interlocked.Increment(ref ApplicationService.ApplicationView.CUE4Parse.FailedExportCount);
+                Log.Error("Failed to encode texture '{Name}' for bulk export", name);
+                return;
+            }
+
+            SaveImageBuffer(exportName, buffer, updateUi: false);
+            return;
+        }
+
+        var t = new TabImage(name, rnn, img);
         Application.Current.Dispatcher.Invoke(() =>
         {
-            var t = new TabImage(name, rnn, img);
             if (save) SaveImage(t, updateUi);
             if (!updateUi) return;
 
@@ -386,28 +498,24 @@ public class TabItem : ViewModel
     private void SaveImage(TabImage image, bool updateUi)
     {
         if (image is null) return;
+        SaveImageBuffer(image.ExportName, image.ImageBuffer, updateUi);
+    }
 
-        var path = Path.Combine(UserSettings.Default.TextureDirectory, UserSettings.Default.KeepDirectoryStructure ? Entry.Directory : "", image.ExportName).Replace('\\', '/');
+    private void SaveImageBuffer(string exportName, byte[] imageBuffer, bool updateUi)
+    {
+        if (string.IsNullOrEmpty(exportName) || imageBuffer is null) return;
+
+        var path = Path.Combine(UserSettings.Default.TextureDirectory, UserSettings.Default.KeepDirectoryStructure ? Entry.Directory : "", exportName).Replace('\\', '/');
 
         Directory.CreateDirectory(path.SubstringBeforeLast('/'));
 
-        SaveImage(image, path, image.ExportName, updateUi);
-    }
+        if (AlreadyExportedCheck(path, exportName, updateUi)) return;
+        if (OverwriteProtectedCheck(path, exportName, imageBuffer.LongLength, updateUi)) return;
 
-    private void SaveImage(TabImage image, string path, string fileName, bool updateUi)
-    {
-        if (AlreadyExportedCheck(path, fileName, updateUi)) return;
-        if (image?.ImageBuffer != null && OverwriteProtectedCheck(path, fileName, image.ImageBuffer.LongLength, updateUi)) return;
+        using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read))
+            fs.Write(imageBuffer, 0, imageBuffer.Length);
 
-        SaveImage(image, path);
-        SaveCheck(path, fileName, updateUi);
-    }
-
-    private void SaveImage(TabImage image, string path)
-    {
-        if (image.ImageBuffer is null)  return;
-        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
-        fs.Write(image.ImageBuffer, 0, image.ImageBuffer.Length);
+        SaveCheck(path, exportName, updateUi);
     }
 
     public void SaveProperty(bool updateUi)

@@ -136,6 +136,9 @@ public enum EBulkType
     Raw =           1 << 7,
     [Description("Metadata")]
     Metadata =      1 << 8,
+    /// <summary>One load per asset: JSON + textures + models + animations + audio.</summary>
+    [Description("Properties + Textures + Models + Animations + Audio")]
+    AllAssets = Properties | Textures | Meshes | Animations | Audio,
 }
 
 public enum EAssetCategory : uint

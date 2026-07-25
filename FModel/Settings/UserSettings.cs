@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using CUE4Parse.UE4.Assets.Exports.Material;
 using CUE4Parse.UE4.Assets.Exports.Nanite;
 using CUE4Parse.UE4.Lua.unluac;
@@ -18,6 +20,7 @@ using FModel.ViewModels;
 using FModel.ViewModels.ApiEndpoints.Models;
 using FModel.Views.Snooper;
 using Newtonsoft.Json;
+using Serilog;
 
 namespace FModel.Settings
 {
@@ -32,12 +35,119 @@ namespace FModel.Settings
         public static readonly string FilePath = Path.Combine(AppDataFolder, "AppSettings.json");
 #endif
 
+        private static bool _bSave = true;
+        private static bool _autoSaveEnabled;
+        private static bool _suspendAutoSave;
+        private static int _suspendAutoSaveDepth;
+        private static DispatcherTimer _autoSaveTimer;
+        private static UserSettings _autoSaveHooked;
+
         static UserSettings()
         {
             Default = new UserSettings();
         }
 
-        private static bool _bSave = true;
+        /// <summary>
+        /// Hook <see cref="PropertyChanged"/> so live edits debounce-save AppSettings + the active profile.
+        /// Call once after AppSettings.json is loaded (replaces the static ctor instance).
+        /// </summary>
+        public static void EnableAutoSave()
+        {
+            if (_autoSaveHooked != null)
+                _autoSaveHooked.PropertyChanged -= OnDefaultPropertyChanged;
+
+            _autoSaveHooked = Default;
+            if (_autoSaveHooked != null)
+                _autoSaveHooked.PropertyChanged += OnDefaultPropertyChanged;
+
+            _autoSaveEnabled = true;
+        }
+
+        /// <summary>Suppress disk writes during profile PopulateObject / bulk rebinds.</summary>
+        public static void SuspendAutoSave()
+        {
+            _suspendAutoSaveDepth++;
+            _suspendAutoSave = true;
+        }
+
+        public static void ResumeAutoSave()
+        {
+            if (_suspendAutoSaveDepth > 0)
+                _suspendAutoSaveDepth--;
+            if (_suspendAutoSaveDepth == 0)
+                _suspendAutoSave = false;
+        }
+
+        public static IDisposable BeginAutoSaveSuspend() => new AutoSaveSuspendScope();
+
+        private sealed class AutoSaveSuspendScope : IDisposable
+        {
+            public AutoSaveSuspendScope() => SuspendAutoSave();
+            public void Dispose() => ResumeAutoSave();
+        }
+
+        private static void OnDefaultPropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (!_autoSaveEnabled || _suspendAutoSave || !_bSave)
+                return;
+            RequestAutoSave();
+        }
+
+        /// <summary>Debounced persist (≈400ms) of AppSettings.json + active profile snapshot.</summary>
+        public static void RequestAutoSave()
+        {
+            if (!_autoSaveEnabled || _suspendAutoSave || !_bSave || Default == null)
+                return;
+
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.HasShutdownStarted)
+                return;
+
+            void ArmTimer()
+            {
+                if (_autoSaveTimer == null)
+                {
+                    _autoSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+                    _autoSaveTimer.Tick += (_, _) =>
+                    {
+                        _autoSaveTimer.Stop();
+                        PersistLiveSettings();
+                    };
+                }
+
+                _autoSaveTimer.Stop();
+                _autoSaveTimer.Start();
+            }
+
+            if (dispatcher.CheckAccess())
+                ArmTimer();
+            else
+                dispatcher.BeginInvoke(ArmTimer);
+        }
+
+        /// <summary>Write AppSettings.json and the active named profile (if any).</summary>
+        public static void PersistLiveSettings()
+        {
+            if (!_bSave || Default == null || _suspendAutoSave)
+                return;
+
+            using (BeginAutoSaveSuspend())
+            {
+                try
+                {
+                    Save();
+
+                    var profile = Default.CurrentProfileName;
+                    if (!string.IsNullOrWhiteSpace(profile))
+                        ProfileManager.SaveCurrentAs(profile);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to auto-save settings / active profile");
+                }
+            }
+        }
+
         public static void Save()
         {
             if (!_bSave || Default == null) return;
@@ -168,6 +278,29 @@ namespace FModel.Settings
             set => SetProperty(ref _isLoggerExpanded, value);
         }
 
+        // Settings → General SeparatorExpander IsExpanded (persisted per profile)
+        private bool _settingsAdvancedExpanded;
+        public bool SettingsAdvancedExpanded
+        {
+            get => _settingsAdvancedExpanded;
+            set => SetProperty(ref _settingsAdvancedExpanded, value);
+        }
+
+        private bool _settingsExportBehaviorExpanded;
+        public bool SettingsExportBehaviorExpanded
+        {
+            get => _settingsExportBehaviorExpanded;
+            set => SetProperty(ref _settingsExportBehaviorExpanded, value);
+        }
+
+
+        private bool _settingsFortniteLiveExpanded;
+        public bool SettingsFortniteLiveExpanded
+        {
+            get => _settingsFortniteLiveExpanded;
+            set => SetProperty(ref _settingsFortniteLiveExpanded, value);
+        }
+
         private GridLength _avalonImageSize = new (200);
         public GridLength AvalonImageSize
         {
@@ -245,11 +378,110 @@ namespace FModel.Settings
             set => SetProperty(ref _exportSmallestFilesFirst, value);
         }
 
+        private bool _groupExportLooseAssets = true;
+        /// <summary>
+        /// When true: loose images (png/jpg/bmp/svg) export with Textures;
+        /// text/config/font types (ini, txt, ttf, …) export with Properties.
+        /// When false: fonts stay raw-only (legacy warning on Properties export).
+        /// </summary>
+        public bool GroupExportLooseAssets
+        {
+            get => _groupExportLooseAssets;
+            set => SetProperty(ref _groupExportLooseAssets, value);
+        }
+
+        /// <summary>
+        /// Export Queue: collect every loaded archive file into one flat list, sort smallest→largest,
+        /// and skip per-folder success console logs. Default on.
+        /// </summary>
+        private bool _exportQueueFlatArchiveExport = true;
+        public bool ExportQueueFlatArchiveExport
+        {
+            get => _exportQueueFlatArchiveExport;
+            set => SetProperty(ref _exportQueueFlatArchiveExport, value);
+        }
+
+        /// <summary>
+        /// Export Queue: skip <c>.umap</c> packages while a queue run is active.
+        /// </summary>
+        private bool _exportQueueExcludeUmap;
+        public bool ExportQueueExcludeUmap
+        {
+            get => _exportQueueExcludeUmap;
+            set => SetProperty(ref _exportQueueExcludeUmap, value);
+        }
+
+        /// <summary>
+        /// Export Queue: when true, skip assets under <see cref="ExportQueueIgnoredFolders"/>.
+        /// </summary>
+        private bool _exportQueueExcludeDirectories;
+        public bool ExportQueueExcludeDirectories
+        {
+            get => _exportQueueExcludeDirectories;
+            set => SetProperty(ref _exportQueueExcludeDirectories, value);
+        }
+
+        /// <summary>
+        /// Pasteable list of folder path prefixes to skip during Export Queue runs
+        /// (one per line, or comma/semicolon-separated). Matched against package Directory/Path.
+        /// Saved with the active profile via settings autosave.
+        /// </summary>
+        private string _exportQueueIgnoredFolders = string.Empty;
+        public string ExportQueueIgnoredFolders
+        {
+            get => _exportQueueIgnoredFolders;
+            set => SetProperty(ref _exportQueueIgnoredFolders, value ?? string.Empty);
+        }
+
+        /// <summary>
+        /// Export Queue: when true, skip packages whose FMDex class tags match
+        /// <see cref="ExportQueueIgnoredClasses"/>.
+        /// </summary>
+        private bool _exportQueueExcludeClasses;
+        public bool ExportQueueExcludeClasses
+        {
+            get => _exportQueueExcludeClasses;
+            set => SetProperty(ref _exportQueueExcludeClasses, value);
+        }
+
+        /// <summary>
+        /// Pasteable UE class names / fragments / FMDex aliases (model, tex, anim, …)
+        /// to skip during Export Queue runs. Requires FMDex tags; unindexed packages are not skipped.
+        /// </summary>
+        private string _exportQueueIgnoredClasses = string.Empty;
+        public string ExportQueueIgnoredClasses
+        {
+            get => _exportQueueIgnoredClasses;
+            set => SetProperty(ref _exportQueueIgnoredClasses, value ?? string.Empty);
+        }
+
+        /// <summary>
+        /// Export Queue: when true, run FMDex indexing on the queue's selected folders
+        /// before export work starts (so class-exclusion tags exist). Default off.
+        /// </summary>
+        private bool _exportQueueIndexBeforeExport;
+        public bool ExportQueueIndexBeforeExport
+        {
+            get => _exportQueueIndexBeforeExport;
+            set => SetProperty(ref _exportQueueIndexBeforeExport, value);
+        }
+
         private EMetadataExport _metadataExportMode = EMetadataExport.Disabled;
         public EMetadataExport MetadataExportMode
         {
             get => _metadataExportMode;
             set => SetProperty(ref _metadataExportMode, value);
+        }
+
+        /// <summary>
+        /// Last-used Export Queue global export flags (checkbox combination). Defaults to AllAssets
+        /// (Properties + Textures + Models + Animations + Audio), matching the old dropdown default.
+        /// </summary>
+        private EBulkType _exportQueueBulkType = EBulkType.AllAssets;
+        public EBulkType ExportQueueBulkType
+        {
+            get => _exportQueueBulkType;
+            set => SetProperty(ref _exportQueueBulkType, value);
         }
 
         private bool _autoExportTexturesWithModels;
@@ -337,6 +569,7 @@ namespace FModel.Settings
             get => _fmDexBuild;
             set => SetProperty(ref _fmDexBuild, value ?? string.Empty);
         }
+
 
         private int _fmDexMaxThreads;
         /// <summary>

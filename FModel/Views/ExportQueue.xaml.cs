@@ -78,8 +78,7 @@ public partial class ExportQueue
 
     private void OnQueueGlobal(object sender, RoutedEventArgs e)
     {
-        if (GlobalBulkTypeCombo.SelectedItem is not EBulkType bulkType) return;
-        ApplicationService.ApplicationView.ExportQueue.EnqueueGlobal(bulkType);
+        ApplicationService.ApplicationView.ExportQueue.EnqueueSelectedGlobal();
     }
 
     private void OnRemoveItem(object sender, RoutedEventArgs e)

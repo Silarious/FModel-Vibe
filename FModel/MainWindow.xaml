@@ -755,25 +755,46 @@
             </StatusBar.Style>
 
             <StatusBarItem Margin="5,0,0,0" >
-                <TextBlock>
-                    <TextBlock.Style>
-                        <Style TargetType="{x:Type TextBlock}">
-                            <Setter Property="Text" Value="{Binding Status.Label}" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding Status.Kind}" Value="{x:Static local:EStatusKind.Loading}">
-                                    <Setter Property="Text" Value="{Binding Status.Label, StringFormat='{}{0} …'}" />
-                                </DataTrigger>
-                                <MultiDataTrigger>
-                                    <MultiDataTrigger.Conditions>
-                                        <Condition Binding="{Binding CanBeCanceled, Source={x:Static services:ApplicationService.ThreadWorkerView}}" Value="True" />
-                                        <Condition Binding="{Binding Status.Kind}" Value="{x:Static local:EStatusKind.Loading}" />
-                                    </MultiDataTrigger.Conditions>
-                                    <Setter Property="Text" Value="{Binding Status.Label, StringFormat='{}{0} …    ESC to Cancel'}" />
-                                </MultiDataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock>
+                        <TextBlock.Style>
+                            <Style TargetType="{x:Type TextBlock}">
+                                <Setter Property="Text" Value="{Binding Status.Label}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Status.Kind}" Value="{x:Static local:EStatusKind.Loading}">
+                                        <Setter Property="Text" Value="{Binding Status.Label, StringFormat='{}{0} …'}" />
+                                    </DataTrigger>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding CanBeCanceled, Source={x:Static services:ApplicationService.ThreadWorkerView}}" Value="True" />
+                                            <Condition Binding="{Binding Status.Kind}" Value="{x:Static local:EStatusKind.Loading}" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Text" Value="{Binding Status.Label, StringFormat='{}{0} …'}" />
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Margin="10,0,0,0" FontWeight="SemiBold"
+                               Text="{Binding Status.ProgressText}"
+                               Visibility="{Binding Status.HasProgress, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <TextBlock Margin="10,0,0,0">
+                        <TextBlock.Style>
+                            <Style TargetType="{x:Type TextBlock}">
+                                <Setter Property="Text" Value="" />
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding CanBeCanceled, Source={x:Static services:ApplicationService.ThreadWorkerView}}" Value="True" />
+                                            <Condition Binding="{Binding Status.Kind}" Value="{x:Static local:EStatusKind.Loading}" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Text" Value="ESC to Cancel" />
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
             </StatusBarItem>
 
             <StatusBarItem Margin="0 0 5 0" HorizontalAlignment="Right">

@@ -165,27 +165,18 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
                 ExportFolderWithPerChildLogs(contextViewModel, cancellationToken, folder, bulktype, folderAction, dirType, filetype);
             }
 
-            Action<GameFile, EBulkType, bool> fileAction = bulktype switch
-            {
-                EBulkType.Raw => (entry, _, update) => contextViewModel.CUE4Parse.ExportData(entry, !update),
-                EBulkType.Metadata => (entry, _, update) => contextViewModel.CUE4Parse.ExportMetadata(entry, !update),
-                _ => (entry, bulk, update) => contextViewModel.CUE4Parse.Extract(cancellationToken, entry, false, bulk),
-            };
-
             foreach (var group in assetsGroups)
             {
                 var directory = group.Key;
                 var list = group.ToArray();
                 var update = list.Length > 1;
                 var bulk = bulktype | (update ? EBulkType.Auto : EBulkType.None);
-                foreach (var entry in list)
-                {
-                    Thread.Yield();
-                    cancellationToken.ThrowIfCancellationRequested();
-                    fileAction(entry, bulk, update);
-                }
 
-                if (update)
+                Interlocked.Exchange(ref contextViewModel.CUE4Parse.ExportedCount, 0);
+                Interlocked.Exchange(ref contextViewModel.CUE4Parse.FailedExportCount, 0);
+                contextViewModel.CUE4Parse.BulkExportEntries(cancellationToken, list, bulk);
+
+                if (update || contextViewModel.CUE4Parse.ExportedCount > 0)
                 {
                     var path = Path.Combine(dirType, UserSettings.Default.KeepDirectoryStructure ? directory : directory.SubstringAfterLast('/')).Replace('\\', '/');
                     LogExport(contextViewModel, directory, path, dirType, filetype);
@@ -195,8 +186,7 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
     }
 
     /// <summary>
-    /// Export a selected folder, emitting one success log per immediate child folder
-    /// (folder name, file count, clickable disk path). Leaf folders still get a single log.
+    /// Export a selected folder (tree-wide single pass with per-folder success logs).
     /// </summary>
     private void ExportFolderWithPerChildLogs(
         ApplicationViewModel contextViewModel,
@@ -207,29 +197,10 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
         string dirType,
         string filetype)
     {
-        var children = folder.Folders.ToArray();
-        if (children.Length == 0)
-        {
-            folderAction(folder);
-            LogFolderExport(contextViewModel, folder, dirType, filetype);
-            return;
-        }
-
-        // Assets sitting directly on the selected folder (not in a child).
         Interlocked.Exchange(ref contextViewModel.CUE4Parse.ExportedCount, 0);
         Interlocked.Exchange(ref contextViewModel.CUE4Parse.FailedExportCount, 0);
-        contextViewModel.CUE4Parse.ExportAssetsAtFolderLevel(cancellationToken, folder, bulktype | EBulkType.Auto);
-
-        if (contextViewModel.CUE4Parse.ExportedCount > 0 || contextViewModel.CUE4Parse.FailedExportCount > 0)
-            LogFolderExport(contextViewModel, folder, dirType, filetype);
-
-        foreach (var child in children)
-        {
-            Interlocked.Exchange(ref contextViewModel.CUE4Parse.ExportedCount, 0);
-            Interlocked.Exchange(ref contextViewModel.CUE4Parse.FailedExportCount, 0);
-            folderAction(child);
-            LogFolderExport(contextViewModel, child, dirType, filetype);
-        }
+        folderAction(folder);
+        LogFolderExport(contextViewModel, folder, dirType, filetype);
     }
 
     private void LogFolderExport(ApplicationViewModel contextViewModel, TreeItem folder, string dirType, string filetype)
@@ -244,12 +215,16 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
 
     private void LogExport(ApplicationViewModel contextViewModel, string directory, string path, string basePath, string fileType)
     {
+        var elapsed = contextViewModel.Status.LastLapElapsedText;
+        var elapsedSuffix = string.IsNullOrEmpty(elapsed) ? string.Empty : $", {elapsed}";
         if (contextViewModel.CUE4Parse.ExportedCount > 0)
         {
             FLogger.Append(ELog.Information, () =>
             {
                 FLogger.Text($"Successfully exported {contextViewModel.CUE4Parse.ExportedCount} {fileType} from ", Constants.WHITE);
-                FLogger.Link(directory, Path.Exists(path) ? path : basePath, true);
+                FLogger.Link(directory, Path.Exists(path) ? path : basePath, string.IsNullOrEmpty(elapsedSuffix));
+                if (!string.IsNullOrEmpty(elapsedSuffix))
+                    FLogger.Text(elapsedSuffix, Constants.WHITE, true);
             });
         }
         else if (contextViewModel.CUE4Parse.FailedExportCount == 0)
@@ -257,7 +232,7 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
             // Not an error because folder simply might not contain type of asset user is trying to save
             FLogger.Append(ELog.Warning, () =>
             {
-                FLogger.Text($"Failed to find any {fileType} in {directory}", Constants.WHITE, true);
+                FLogger.Text($"Failed to find any {fileType} in {directory}{elapsedSuffix}", Constants.WHITE, true);
             });
         }
 
@@ -265,7 +240,7 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
         {
             FLogger.Append(ELog.Error, () =>
             {
-                FLogger.Text($"Failed to export {contextViewModel.CUE4Parse.FailedExportCount} {fileType} from {directory}", Constants.WHITE, true);
+                FLogger.Text($"Failed to export {contextViewModel.CUE4Parse.FailedExportCount} {fileType} from {directory}{elapsedSuffix}", Constants.WHITE, true);
             });
         }
 

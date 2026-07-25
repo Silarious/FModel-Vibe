@@ -22,24 +22,13 @@
         <ResourceDictionary>
             <controls:OnTagDataTemplateSelector x:Key="TagTemplateSelector" />
             <DataTemplate x:Key="GeneralTemplate">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              MaxHeight="{Binding Source={x:Static SystemParameters.MaximizedPrimaryScreenHeight}, Converter={converters:RatioConverter}, ConverterParameter='0.72'}"
+                              adonisExtensions:ScrollViewerExtension.VerticalScrollBarExpansionMode="NeverExpand"
+                              adonisExtensions:ScrollViewerExtension.VerticalScrollBarPlacement="Docked">
                 <Grid adonisExtensions:LayerExtension.Layer="2">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -74,9 +63,10 @@
                     <CheckBox Grid.Row="0" Grid.Column="6" Margin="5 0 0 5" ToolTip="Customize the directory of more output folders"
                               DataContext="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:Views.SettingsView}}}"
                               IsChecked="{Binding SettingsView.UseCustomOutputFolders, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                    <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="7" HorizontalAlignment="Right"
+                    <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="7" HorizontalAlignment="Stretch"
                           DataContext="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:Views.SettingsView}}}"
-                          Visibility="{Binding SettingsView.UseCustomOutputFolders, Converter={StaticResource BoolToVisibilityConverter}}">
+                          Visibility="{Binding SettingsView.UseCustomOutputFolders, Converter={StaticResource BoolToVisibilityConverter}}"
+                          Grid.IsSharedSizeScope="True">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -86,7 +76,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="10" />
-                            <ColumnDefinition Width="{Binding ActualWidth, ElementName=ImJackedBro}" />
+                            <ColumnDefinition Width="*" SharedSizeGroup="SettingsPathColumn" />
                             <ColumnDefinition Width="5" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
@@ -180,167 +170,227 @@
                             DataContext="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:Views.SettingsView}}}"
                             Visibility="{Binding SettingsView.MappingEndpoint.Overwrite, Converter={StaticResource BoolToVisibilityConverter}}" />
 
-                    <Separator Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="7" Style="{StaticResource CustomSeparator}" Tag="ADVANCED"></Separator>
+                    <Expander Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="7" ExpandDirection="Down"
+                              IsExpanded="{Binding SettingsAdvancedExpanded, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}"
+                              Style="{StaticResource SeparatorExpander}" Header="ADVANCED">
+                        <Grid Margin="0 4 0 0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="5" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="5" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Row="13" Grid.Column="0" Text="Versioning Configuration *" VerticalAlignment="Center" Margin="0 0 0 5" />
-                    <Grid Grid.Row="13" Grid.Column="2" Grid.ColumnSpan="5" Margin="0 0 0 5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="5" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="5" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Versioning Configuration *" VerticalAlignment="Center" Margin="0 0 0 5" />
+                            <Grid Grid.Row="0" Grid.Column="2" Grid.ColumnSpan="5" Margin="0 0 0 5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="5" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="5" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
 
-                        <Button Grid.Column="0" Content="Custom Versions" Click="OpenCustomVersions" />
-                        <Button Grid.Column="2" Content="Options" Click="OpenOptions" />
-                        <Button Grid.Column="4" Content="MapStructTypes" Click="OpenMapStructTypes" />
-                    </Grid>
+                                <Button Grid.Column="0" Content="Custom Versions" Click="OpenCustomVersions" />
+                                <Button Grid.Column="2" Content="Options" Click="OpenOptions" />
+                                <Button Grid.Column="4" Content="MapStructTypes" Click="OpenMapStructTypes" />
+                            </Grid>
 
-                    <TextBlock Grid.Row="14" Grid.Column="0" Text="AES Reload at Launch" VerticalAlignment="Center" Margin="0 0 0 5"
-                               DataContext="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:Views.SettingsView}}}"
-                               Visibility="{Binding SettingsView.AesEndpoint.IsValid, Converter={StaticResource BoolToVisibilityConverter}}" />
-                    <ComboBox Grid.Row="14" Grid.Column="2" Grid.ColumnSpan="5" Margin="0 0 0 5"
-                              DataContext="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:Views.SettingsView}}}"
-                              ItemsSource="{Binding SettingsView.AesReloads}" SelectedItem="{Binding SettingsView.SelectedAesReload, Mode=TwoWay}"
-                              Visibility="{Binding SettingsView.AesEndpoint.IsValid, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="AES Reload at Launch" VerticalAlignment="Center" Margin="0 0 0 5"
+                                       DataContext="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:Views.SettingsView}}}"
+                                       Visibility="{Binding SettingsView.AesEndpoint.IsValid, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            <ComboBox Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="5" Margin="0 0 0 5"
+                                      DataContext="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:Views.SettingsView}}}"
+                                      ItemsSource="{Binding SettingsView.AesReloads}" SelectedItem="{Binding SettingsView.SelectedAesReload, Mode=TwoWay}"
+                                      Visibility="{Binding SettingsView.AesEndpoint.IsValid, Converter={StaticResource BoolToVisibilityConverter}}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
 
-                    <TextBlock Grid.Row="15" Grid.Column="0" Text="Endpoint Configuration" VerticalAlignment="Center" Margin="0 0 0 5" />
-                    <Grid Grid.Row="15" Grid.Column="2" Grid.ColumnSpan="5" Margin="0 0 0 5"
-                          DataContext="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:Views.SettingsView}}}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="5" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Endpoint Configuration" VerticalAlignment="Center" Margin="0 0 0 5" />
+                            <Grid Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="5" Margin="0 0 0 5"
+                                  DataContext="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:Views.SettingsView}}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="5" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
 
-                        <Button Grid.Column="0" Content="AES" Click="OpenAesEndpoint" />
-                        <Button Grid.Column="2" Content="Mapping" Click="OpenMappingEndpoint" />
-                    </Grid>
+                                <Button Grid.Column="0" Content="AES" Click="OpenAesEndpoint" />
+                                <Button Grid.Column="2" Content="Mapping" Click="OpenMappingEndpoint" />
+                            </Grid>
 
-                    <TextBlock Grid.Row="16" Grid.Column="0" Text="Serialize Script Bytecode" VerticalAlignment="Center" Margin="0 0 0 5" />
-                    <CheckBox Grid.Row="16" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding ReadScriptData, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Serialize Script Bytecode" VerticalAlignment="Center" Margin="0 0 0 5" />
+                            <CheckBox Grid.Row="3" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding ReadScriptData, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
-                    <TextBlock Grid.Row="17" Grid.Column="0" Text="Serialize Inlined Shader Maps" VerticalAlignment="Center" Margin="0 0 0 5" />
-                    <CheckBox Grid.Row="17" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding ReadShaderMaps, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Serialize Inlined Shader Maps" VerticalAlignment="Center" Margin="0 0 0 5" />
+                            <CheckBox Grid.Row="4" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding ReadShaderMaps, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
-                    <TextBlock Grid.Row="18" Grid.Column="0" Text="Decompile Blueprint to Pseudo C++" VerticalAlignment="Center" Margin="0 0 0 5" ToolTip="Adds a right click option to decompile UClass packages into a pseudo C++ friendly format" />
-                    <CheckBox Grid.Row="18" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding ShowDecompileOption, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Decompile Blueprint to Pseudo C++" VerticalAlignment="Center" Margin="0 0 0 5" ToolTip="Adds a right click option to decompile UClass packages into a pseudo C++ friendly format" />
+                            <CheckBox Grid.Row="5" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding ShowDecompileOption, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
-                    <TextBlock Grid.Row="19" Grid.Column="0" Text="Decompile Lua" VerticalAlignment="Center" Margin="0 0 0 5" ToolTip="Decompile/Disassemble compiled lua files with an unluac." />
-                    <CheckBox Grid.Row="19" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding DecompileLua, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}"
-                              Checked="OnDecompileLuaChanged" />
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Decompile Lua" VerticalAlignment="Center" Margin="0 0 0 5" ToolTip="Decompile/Disassemble compiled lua files with an unluac." />
+                            <CheckBox Grid.Row="6" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding DecompileLua, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}"
+                                      Checked="OnDecompileLuaChanged" />
 
-                    <TextBlock Grid.Row="20"
-                               Grid.Column="0"
-                               Text="Convert Audio During Export (.wav)"
-                               VerticalAlignment="Center"
-                               Margin="0 0 0 5" />
-                    <CheckBox Grid.Row="20"
-                              Grid.Column="2"
-                              Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding ConvertAudioOnBulkExport, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}"
-                              Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                            <TextBlock Grid.Row="7" Grid.Column="0" Text="Convert Audio During Export (.wav)" VerticalAlignment="Center" Margin="0 0 0 5" />
+                            <CheckBox Grid.Row="7" Grid.Column="2"
+                                      Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding ConvertAudioOnBulkExport, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}"
+                                      Margin="0 5 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
-                    <TextBlock Grid.Row="21"
-                               Grid.Column="0"
-                               Text="CRIWARE Decryption Key"
-                               VerticalAlignment="Center"
-                               Margin="0 0 0 10" />
+                            <TextBlock Grid.Row="8" Grid.Column="0" Text="CRIWARE Decryption Key" VerticalAlignment="Center" Margin="0 0 0 10" />
+                            <TextBox x:Name="CriwareKeyBox"
+                                     Grid.Row="8"
+                                     Grid.Column="2"
+                                     Grid.ColumnSpan="5"
+                                     Margin="0 5 0 10"
+                                     VerticalAlignment="Center"
+                                     VerticalContentAlignment="Center"
+                                     MaxLength="20"
+                                     ToolTip="Enter decryption key in numeric or hexadecimal format (valid key is up to 20 digits or 8 bytes long)"
+                                     TextAlignment="Right"
+                                     TextChanged="CriwareKeyBox_TextChanged"
+                                     Loaded="CriwareKeyBox_Loaded"/>
+                        </Grid>
+                    </Expander>
 
-                    <TextBox x:Name="CriwareKeyBox"
-                             Grid.Row="21"
-                             Grid.Column="2"
-                             Grid.ColumnSpan="5"
-                             Margin="0 5 0 10"
-                             VerticalAlignment="Center"
-                             VerticalContentAlignment="Center"
-                             MaxLength="20"
-                             ToolTip="Enter decryption key in numeric or hexadecimal format (valid key is up to 20 digits or 8 bytes long)"
-                             TextAlignment="Right"
-                             TextChanged="CriwareKeyBox_TextChanged"
-                             Loaded="CriwareKeyBox_Loaded"/>
+                    <Expander Grid.Row="13" Grid.Column="0" Grid.ColumnSpan="7" ExpandDirection="Down"
+                              IsExpanded="{Binding SettingsExportBehaviorExpanded, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}"
+                              Style="{StaticResource SeparatorExpander}" Header="EXPORT BEHAVIOR">
+                        <Grid Margin="0 4 0 0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
 
-                    <Separator Grid.Row="22" Grid.Column="0" Grid.ColumnSpan="7" Style="{StaticResource CustomSeparator}" Tag="EXPORT BEHAVIOR"></Separator>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Metadata Export" VerticalAlignment="Center" Margin="0 0 0 5"
+                                       ToolTip="Disabled: never export metadata automatically. Auto Export: save metadata to its own file alongside the properties json. Append to Json: merge the metadata into the properties json file itself to avoid an extra file." />
+                            <ComboBox Grid.Row="0" Grid.Column="2" Margin="0 0 0 5"
+                                      ItemsSource="{Binding SettingsView.MetadataExportModes}" SelectedItem="{Binding SettingsView.SelectedMetadataExportMode, Mode=TwoWay}"
+                                      DataContext="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:Views.SettingsView}}}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
 
-                    <TextBlock Grid.Row="23" Grid.Column="0" Text="Metadata Export" VerticalAlignment="Center" Margin="0 0 0 5"
-                               ToolTip="Disabled: never export metadata automatically. Auto Export: save metadata to its own file alongside the properties json. Append to Json: merge the metadata into the properties json file itself to avoid an extra file." />
-                    <ComboBox Grid.Row="23" Grid.Column="2" Grid.ColumnSpan="5" Margin="0 0 0 5"
-                              ItemsSource="{Binding SettingsView.MetadataExportModes}" SelectedItem="{Binding SettingsView.SelectedMetadataExportMode, Mode=TwoWay}"
-                              DataContext="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:Views.SettingsView}}}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Skip Already Exported Files" VerticalAlignment="Center" Margin="0 0 0 5"
+                                       ToolTip="Don't redo work: if the destination file already exists (and, in the Name and Size mode, isn't empty), skip it instead of overwriting it. Both modes only ever check the filesystem, never reprocess the asset, so they're cheap and checked as early as possible." />
+                            <ComboBox Grid.Row="1" Grid.Column="2" Margin="0 0 0 5"
+                                      ItemsSource="{x:Static local:Settings.UserSettings.SkipAlreadyExportedModes}"
+                                      SelectedItem="{Binding SkipAlreadyExportedMode, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
 
-                    <TextBlock Grid.Row="24" Grid.Column="0" Text="Skip Already Exported Files" VerticalAlignment="Center" Margin="0 0 0 5"
-                               ToolTip="Don't redo work: if the destination file already exists (and, in the Name and Size mode, isn't empty), skip it instead of overwriting it. Both modes only ever check the filesystem, never reprocess the asset, so they're cheap and checked as early as possible." />
-                    <ComboBox Grid.Row="24" Grid.Column="2" Grid.ColumnSpan="5" Margin="0 0 0 5"
-                              ItemsSource="{x:Static local:Settings.UserSettings.SkipAlreadyExportedModes}"
-                              SelectedItem="{Binding SkipAlreadyExportedMode, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Overwrite Protection" VerticalAlignment="Center" Margin="0 5 0 10"
+                                       ToolTip="Only relevant while Skip Already Exported Files is Disabled. Refuses to overwrite a destination file that already exists with a different size than the new export - a safety net against clobbering files from a different game version/build (e.g. output directories set up wrong), instead of silently overwriting them." />
+                            <CheckBox Grid.Row="2" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding OverwriteProtection, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
-                    <TextBlock Grid.Row="25" Grid.Column="0" Text="Overwrite Protection" VerticalAlignment="Center" Margin="0 5 0 10"
-                               ToolTip="Only relevant while Skip Already Exported Files is Disabled. Refuses to overwrite a destination file that already exists with a different size than the new export - a safety net against clobbering files from a different game version/build (e.g. output directories set up wrong), instead of silently overwriting them." />
-                    <CheckBox Grid.Row="25" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding OverwriteProtection, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Export Smallest Files First" VerticalAlignment="Center" Margin="0 5 0 10" ToolTip="When bulk exporting a folder, process smaller files before bigger ones" />
+                            <CheckBox Grid.Row="3" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding ExportSmallestFilesFirst, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
-                    <TextBlock Grid.Row="26" Grid.Column="0" Text="Export Smallest Files First" VerticalAlignment="Center" Margin="0 5 0 10" ToolTip="When bulk exporting a folder, process smaller files before bigger ones" />
-                    <CheckBox Grid.Row="26" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding ExportSmallestFilesFirst, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Group Export Loose Assets" VerticalAlignment="Center" Margin="0 5 0 10"
+                                       ToolTip="When enabled: loose images (png/jpg/bmp/svg) save with Texture export; text/config/font files (ini, txt, json, ttf/otf/ufont, …) save with Properties export. When disabled, fonts only export via Raw Data (legacy)." />
+                            <CheckBox Grid.Row="4" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding GroupExportLooseAssets, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
-                    <TextBlock Grid.Row="27" Grid.Column="0" Text="Auto Export Textures with Models" VerticalAlignment="Center" Margin="0 5 0 10" ToolTip="When bulk exporting a folder of models, also export any textures found in it" />
-                    <CheckBox Grid.Row="27" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding AutoExportTexturesWithModels, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Auto Export Textures with Models" VerticalAlignment="Center" Margin="0 5 0 10" ToolTip="When bulk exporting a folder of models, also export any textures found in it" />
+                            <CheckBox Grid.Row="5" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding AutoExportTexturesWithModels, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
-                    <TextBlock Grid.Row="28" Grid.Column="0" Text="Auto Load All Files on Startup" VerticalAlignment="Center" Margin="0 5 0 10" ToolTip="Once pak/archive files are recognized, automatically populate the assets explorer with everything (equivalent to pressing Load with the All mode)" />
-                    <CheckBox Grid.Row="28" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding AutoLoadAllFilesOnStartup, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Auto Load All Files on Startup" VerticalAlignment="Center" Margin="0 5 0 10" ToolTip="Once pak/archive files are recognized, automatically populate the assets explorer with everything (equivalent to pressing Load with the All mode)" />
+                            <CheckBox Grid.Row="6" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding AutoLoadAllFilesOnStartup, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
-                    <TextBlock Grid.Row="29" Grid.Column="0" Text="Auto Load Fortnite LIVE on Startup" VerticalAlignment="Center" Margin="0 5 0 10"
-                               ToolTip="When using the Fortnite LIVE profile, download/register CDN archives on launch. Off by default — use Directory → Load Fortnite LIVE… instead." />
-                    <CheckBox Grid.Row="29" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding AutoLoadFortniteLiveOnStartup, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                            <TextBlock Grid.Row="7" Grid.Column="0" Text="Convert uint64 to Float" VerticalAlignment="Center" Margin="0 5 0 10" ToolTip="When saving properties/json, detect integers that are actually a bit-cast double (an 8-byte float stored as a uint64) and replace them with the readable float value" />
+                            <CheckBox Grid.Row="7" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding ConvertUint64ToFloat, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                        </Grid>
+                    </Expander>
 
-                    <TextBlock Grid.Row="30" Grid.Column="0" Text="Fortnite LIVE Include UEFN" VerticalAlignment="Center" Margin="0 5 0 10"
-                               ToolTip="Also register Fortnite Creative/UEFN archives when using fortnite-live.manifest. Off by default — roughly doubles LIVE startup time." />
-                    <CheckBox Grid.Row="30" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding FortniteLiveIncludeUefn, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
 
-                    <TextBlock Grid.Row="31" Grid.Column="0" Text="Convert uint64 to Float" VerticalAlignment="Center" Margin="0 5 0 10" ToolTip="When saving properties/json, detect integers that are actually a bit-cast double (an 8-byte float stored as a uint64) and replace them with the readable float value" />
-                    <CheckBox Grid.Row="31" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
-                              IsChecked="{Binding ConvertUint64ToFloat, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 5 0 10"
-                              Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                    <Expander Grid.Row="14" Grid.Column="0" Grid.ColumnSpan="7" ExpandDirection="Down"
+                              IsExpanded="{Binding SettingsFortniteLiveExpanded, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}"
+                              Style="{StaticResource SeparatorExpander}" Header="FORTNITE LIVE"
+                              ToolTip="Options that only apply when using the Fortnite LIVE profile / fortnite-live.manifest">
+                        <Grid Margin="0 4 0 0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Auto Load on Startup" VerticalAlignment="Center" Margin="0 0 0 10"
+                                       ToolTip="When using the Fortnite LIVE profile, download/register CDN archives on launch. Off by default — use Directory → Load Fortnite LIVE… instead." />
+                            <CheckBox Grid.Row="0" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding AutoLoadFortniteLiveOnStartup, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 0 0 10"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Include UEFN" VerticalAlignment="Center" Margin="0 0 0 5"
+                                       ToolTip="Also register Fortnite Creative/UEFN archives when using fortnite-live.manifest. Off by default — roughly doubles LIVE startup time." />
+                            <CheckBox Grid.Row="1" Grid.Column="2" Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                                      IsChecked="{Binding FortniteLiveIncludeUefn, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay}" Margin="0 0 0 5"
+                                      Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+                        </Grid>
+                    </Expander>
 
                 </Grid>
+                </ScrollViewer>
             </DataTemplate>
             <DataTemplate x:Key="ProfilesTemplate">
                 <Grid adonisExtensions:LayerExtension.Layer="2"
@@ -744,7 +794,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="10" />
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" MinWidth="0" />
                         <ColumnDefinition Width="5" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="5" />
@@ -757,7 +807,7 @@
 
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="FMDex Directory" VerticalAlignment="Center" Margin="0 0 0 5"
                                ToolTip="Always {FModel install}/FMDex/{Profile}. Does not follow Raw Data or another profile's Output folder." />
-                    <TextBox Grid.Row="1" Grid.Column="2" IsReadOnly="True"
+                    <TextBox Grid.Row="1" Grid.Column="2" IsReadOnly="True" MinWidth="0" HorizontalAlignment="Stretch"
                              Text="{Binding FMDexDirectory, Source={x:Static local:Settings.UserSettings.Default}, Mode=OneWay}" Margin="0 0 0 5" />
                     <Button Grid.Row="1" Grid.Column="4" Content="Sync" HorizontalAlignment="Right" Click="OnBrowseFMDexDirectory" Margin="0 0 0 5"
                             ToolTip="Refresh from {install}/FMDex/{current profile}" />
@@ -766,18 +816,18 @@
 
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Active FMDex File" VerticalAlignment="Center" Margin="0 0 0 5"
                                ToolTip="Preferred: *_FMDex.json.br (Brotli). Plain *_FMDex.json and legacy *_FDex.* still load and migrate on save." />
-                    <TextBox Grid.Row="2" Grid.Column="2"
+                    <TextBox Grid.Row="2" Grid.Column="2" MinWidth="0" HorizontalAlignment="Stretch"
                              Text="{Binding FMDexActiveFile, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0 0 0 5" />
                     <Button Grid.Row="2" Grid.Column="4" Grid.ColumnSpan="3" Content="Browse..." HorizontalAlignment="Right" Click="OnBrowseFMDexFile" Margin="0 0 0 5" />
 
                     <TextBlock Grid.Row="3" Grid.Column="0" Text="Game" VerticalAlignment="Center" Margin="0 0 0 5"
                                ToolTip="Written into the FMDex JSON as &quot;game&quot; (e.g. PioneerGame). Auto-filled from the mounted project when blank." />
-                    <TextBox Grid.Row="3" Grid.Column="2"
+                    <TextBox Grid.Row="3" Grid.Column="2" MinWidth="0" HorizontalAlignment="Stretch"
                              Text="{Binding FMDexGame, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0 0 0 5" />
 
                     <TextBlock Grid.Row="4" Grid.Column="0" Text="Build" VerticalAlignment="Center" Margin="0 0 0 5"
                                ToolTip="Written into the FMDex JSON as &quot;build&quot;. Prefer identifier from PioneerGame/BuildInfo/manifest.json (e.g. CL1299607-…-BK4338)." />
-                    <TextBox Grid.Row="4" Grid.Column="2"
+                    <TextBox Grid.Row="4" Grid.Column="2" MinWidth="0" HorizontalAlignment="Stretch"
                              Text="{Binding FMDexBuild, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0 0 0 5" />
                     <Button Grid.Row="4" Grid.Column="4" Grid.ColumnSpan="3" Content="Detect from Manifest" HorizontalAlignment="Right"
                             Click="OnDetectFMDexManifest" Margin="0 0 0 5"
@@ -793,7 +843,7 @@
                     <TextBlock Grid.Row="6" Grid.Column="0" Text="Max Index Threads" VerticalAlignment="Center" Margin="0 5 0 5"
                                ToolTip="Parallel workers for Index Folder / Index Selected. 0 = auto (~4× CPU cores, min 32) — indexing is mostly disk/Theia wait, so oversubscription helps. Try 64–128 if CPU stays idle." />
                     <TextBox Grid.Row="6" Grid.Column="2" Width="80" HorizontalAlignment="Left" Margin="0 5 0 5"
-                             Text="{Binding FMDexMaxThreads, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                             Text="{Binding FMDexMaxThreads, Source={x:Static local:Settings.UserSettings.Default}, Mode=TwoWay, UpdateSourceTrigger=LostFocus, Converter={x:Static converters:SafeIntConverter.Instance}}" />
 
                     <TextBlock Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="7" Margin="0 10 0 0" FontStyle="Italic" Opacity="0.7"
                                Text="Search aliases: model/mesh, tex, mat, anim, sound, bp, fx, ui, data… (index stores full class names). Blank Game/Build auto-fill from BuildInfo/manifest.json when indexing." />
@@ -1027,6 +1077,7 @@
         </Grid.ColumnDefinitions>
 
         <TreeView Grid.Row="0" Grid.Column="0" x:Name="SettingsTree" SelectedItemChanged="OnSelectedItemChanged"
+                  PreviewMouseLeftButtonDown="OnSettingsTreePreviewMouseDown"
                   Background="{DynamicResource {x:Static adonisUi:Brushes.Layer3BackgroundBrush}}">
             <TreeViewItem Tag="GeneralTemplate">
                 <TreeViewItem.Header>
@@ -1159,7 +1210,9 @@
         </TreeView>
 
         <Grid Grid.Row="0" Grid.Column="1" Margin="{adonisUi:Space 1, 0.5}" HorizontalAlignment="Stretch">
-            <ContentControl ContentTemplateSelector="{StaticResource TagTemplateSelector}" Content="{Binding SelectedItem.Tag, ElementName=SettingsTree}" />
+            <ContentControl HorizontalContentAlignment="Stretch"
+                            ContentTemplateSelector="{StaticResource TagTemplateSelector}"
+                            Content="{Binding SelectedItem.Tag, ElementName=SettingsTree}" />
         </Grid>
 
         <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" adonisExtensions:LayerExtension.IncreaseLayer="True"

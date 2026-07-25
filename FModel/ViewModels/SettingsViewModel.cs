@@ -231,6 +231,7 @@ public class SettingsViewModel : ViewModel
     private EJsonHighlightTheme _jsonHighlightThemeSnapshot;
 
     private bool _mappingsUpdate = false;
+    private bool _deferredSyncHooked;
 
     public SettingsViewModel()
     {
@@ -314,6 +315,48 @@ public class SettingsViewModel : ViewModel
         TextureExportFormats = new ReadOnlyObservableCollection<ETextureFormat>(new ObservableCollection<ETextureFormat>(EnumerateTextureExportFormat()));
         Platforms = new ReadOnlyObservableCollection<ETexturePlatform>(new ObservableCollection<ETexturePlatform>(EnumerateUePlatforms()));
         JsonHighlightThemes = new ReadOnlyObservableCollection<EJsonHighlightTheme>(new ObservableCollection<EJsonHighlightTheme>(EnumerateJsonHighlightThemes()));
+
+        // SettingsViewModel fields are staged until OK historically; sync + autosave as they change.
+        if (!_deferredSyncHooked)
+        {
+            _deferredSyncHooked = true;
+            PropertyChanged += (_, _) =>
+            {
+                SyncDeferredToUserSettings();
+                UserSettings.RequestAutoSave();
+            };
+        }
+    }
+
+    /// <summary>
+    /// Write staged SettingsViewModel values into <see cref="UserSettings"/> / CurrentDir
+    /// so profile autosave captures them without waiting for OK.
+    /// </summary>
+    public void SyncDeferredToUserSettings()
+    {
+        if (UserSettings.Default?.CurrentDir == null) return;
+
+        UserSettings.Default.CurrentDir.UeVersion = SelectedUeGame;
+        UserSettings.Default.CurrentDir.TexturePlatform = SelectedUePlatform;
+        UserSettings.Default.CurrentDir.Versioning.CustomVersions = SelectedCustomVersions;
+        UserSettings.Default.CurrentDir.Versioning.Options = SelectedOptions;
+        UserSettings.Default.CurrentDir.Versioning.MapStructTypes = SelectedMapStructTypes;
+        UserSettings.Default.CurrentDir.CriwareDecryptionKey = CriwareDecryptionKey;
+        UserSettings.Default.CurrentDir.UnluacOpCodeMap = UnluacOpcodeMap;
+
+        UserSettings.Default.AssetLanguage = SelectedAssetLanguage;
+        UserSettings.Default.CompressedAudioMode = SelectedCompressedAudio;
+        UserSettings.Default.CosmeticStyle = SelectedCosmeticStyle;
+        UserSettings.Default.MetadataExportMode = SelectedMetadataExportMode;
+        UserSettings.Default.MeshExportFormat = SelectedMeshExportFormat;
+        UserSettings.Default.SocketExportFormat = SelectedSocketExportFormat;
+        UserSettings.Default.CompressionFormat = SelectedCompressionFormat;
+        UserSettings.Default.LodExportFormat = SelectedLodExportFormat;
+        UserSettings.Default.NaniteMeshExportFormat = SelectedNaniteMeshExportFormat;
+        UserSettings.Default.MaterialExportFormat = SelectedMaterialExportFormat;
+        UserSettings.Default.TextureExportFormat = SelectedTextureExportFormat;
+        UserSettings.Default.AesReload = SelectedAesReload;
+        UserSettings.Default.JsonHighlightTheme = SelectedJsonHighlightTheme;
     }
 
     /// <summary>
