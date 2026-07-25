@@ -39,9 +39,10 @@ Related export options (Export Behavior section): **Export Smallest Files First*
 
 ### Benchmarks
 
-Hardware: **Ryzen 9 5950X** (16-core factory OC), **M.2 SSD**. Write speeds can saturate SATA hard drives.
+Hardware: **Ryzen 9 5950X** (16-core factory OC), **M.2 SSD**. 
+Write speeds can saturate SATA hard drives, without ssd multithreading is bottlenecked by I/O.
 
-#### JSON / properties
+#### JSON / properties (**189 MB · 36,574 Files**)
 
 | Workers | Time |
 | --- | --- |
@@ -51,9 +52,7 @@ Hardware: **Ryzen 9 5950X** (16-core factory OC), **M.2 SSD**. Write speeds can 
 | 8 | 36.5 s |
 | Max workers, Realtime priority | 30.23 s |
 
-**189 MB · 36,574 JSONs**
-
-#### Images / textures
+#### Images / textures (**1.61 GB · 1,493 Files**)
 
 | Workers | Time |
 | --- | --- |
@@ -64,8 +63,6 @@ Hardware: **Ryzen 9 5950X** (16-core factory OC), **M.2 SSD**. Write speeds can 
 | 12 | 43.8 s |
 | 16 | 35.1 s |
 | 24 | 29.5 s |
-
-**1.61 GB · 1,493 images**
 
 ### Known issues
 
@@ -86,7 +83,7 @@ Settings under **General → EXPORT BEHAVIOR** (and related toggles):
 - **Auto Load All Files on Startup** — After archives are recognized, populate the explorer (same as Load → All)
 - **Convert uint64 to Float** — Bit-cast doubles stored as uint64 → readable floats in properties/JSON (Arc Raiders–oriented; leave off if unused)
 - **Metadata Export** — Disabled / Auto Export (sidecar) / Append to Json
-
+![Export Behaviour Settings](https://imgur.com/NJR3sZq)
 ---
 
 ## Export Queue
@@ -97,6 +94,8 @@ Queue folder or global exports and run them back-to-back.
 - Queue global exports across all loaded assets (Properties, Textures, Models, Animations, Audio, Decompiled Code, Raw, Metadata)
 - Review / remove items, then **Run Queue**
 
+
+
 ### Queue filters & modes
 
 | Option | What it does |
@@ -106,7 +105,7 @@ Queue folder or global exports and run them back-to-back.
 | **Exclude Directories** | Skip path prefixes listed in the ignore box (saved on the active profile) |
 | **Exclude Classes** | Skip packages whose **FMDex** class tags match listed names/fragments/aliases. Unindexed packages are not skipped. Requires FMDex data (use **Index Before Export** or index beforehand) |
 | **Index Before Export** | FMDex-index only the folders selected for this queue run before export (not the whole archive) |
-
+![Export Queue](https://imgur.com/4CtUaXZ)
 ---
 
 ## FMDex
@@ -119,6 +118,8 @@ Package → UE class tag index for Search and Export Queue class exclusion.
 - Search tag aliases (`model`, `tex`, `anim`, `bp`, …) expand to related UE class fragments without changing stored tags
 - Game/build fields in the index; Detect from mounted project / BuildInfo when available
 
+![FMDex Settings](https://imgur.com/OOR8X4M)
+![FMDex Class Search](https://imgur.com/zEg8FId)
 ---
 
 ## Arc Raiders / Theia
@@ -141,7 +142,7 @@ Named settings snapshots for switching games/builds without re-entering paths ea
 - **Save Current Settings as New Profile** (Directory dropdown + top menu)
 - Settings → **Profiles** tab; top-level **Profiles** menu for quick switch
 - Settings changes **autosave** to the active profile (with suspend scopes during bulk profile operations)
-
+![Profiles Settings](https://imgur.com/omx0sER)
 ---
 
 ## Diff Checker
@@ -155,7 +156,7 @@ Top-level window to compare two profiles or manual pak mounts.
 - Optional Write Diff Log (`## ADDED` / `## MODIFIED` / `## REMOVED`)
 - Optional Export Removed Files into `Removed/`
 - Live progress + Stop Diff
-
+![Diff Checker](https://imgur.com/oy9yWqs)
 ---
 
 ## Metadata
